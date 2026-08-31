@@ -4,7 +4,7 @@ import random
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant v0.3.0",
+    page_title="FantaIA Assistant v0.4.0",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -45,7 +45,7 @@ MODULI = {
 
 SLOT_MAX = {"P": 3, "D": 8, "C": 8, "A": 6}
 
-# 3. CSS Avanzato per Campo Tattico, Card e Trade Radar
+# 3. CSS Avanzato
 custom_css = f"""
 <style>
     .stApp {{
@@ -81,7 +81,7 @@ custom_css = f"""
     /* Tabs Navigazione */
     div[data-baseweb="tab-list"] {{
         justify-content: center !important;
-        gap: 6px !important;
+        gap: 4px !important;
         border-bottom: none !important;
         background-color: transparent !important;
         padding-bottom: 10px !important;
@@ -96,14 +96,14 @@ custom_css = f"""
         background-color: rgba(20, 32, 44, 0.8) !important;
         border: 1.5px solid #3d5a45 !important;
         border-radius: 10px !important;
-        padding: 8px 12px !important;
+        padding: 6px 10px !important;
         transition: all 0.25s ease-in-out !important;
     }}
 
     button[data-baseweb="tab"] p {{
         color: #d1d5db !important;
         font-weight: 600 !important;
-        font-size: 0.85rem !important;
+        font-size: 0.8rem !important;
         margin: 0 !important;
     }}
 
@@ -123,7 +123,6 @@ custom_css = f"""
         font-weight: 700 !important;
     }}
 
-    /* Badge Ruoli */
     .role-badge {{
         padding: 3px 8px;
         border-radius: 6px;
@@ -166,7 +165,6 @@ custom_css = f"""
         margin-bottom: 10px;
     }}
 
-    /* STILE CAMPO DA GIOCO TATTICO */
     .pitch-container {{
         background: linear-gradient(180deg, #1b4d27 0%, #11331a 100%);
         border: 2px solid #52b788;
@@ -217,17 +215,18 @@ st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.3.0 - Trade Radar & Exchange Engine</span>
+    <span class="version-badge">v0.4.0 - Match Simulator & Odds Engine</span>
 </div>
 """, unsafe_allow_html=True)
 
 # 5. Navigazione a Schede
-tab_home, tab_asta, tab_radar, tab_formazione, tab_trade = st.tabs([
+tab_home, tab_asta, tab_radar, tab_formazione, tab_trade, tab_sim = st.tabs([
     "🏠 Home", 
     "🔨 Asta Live", 
     "📊 Lega", 
-    "📋 Formazione IA",
-    "🔄 Trade Radar"
+    "📋 Formazione",
+    "🔄 Trade",
+    "⚔️ Scontro Diretto"
 ])
 
 # --- FUNZIONI DI SUPPORTO ---
@@ -273,9 +272,19 @@ def get_complete_roster(nome_squadra=None):
                 "nome": f"{nome_t} ({nome_squadra[:3]})*",
                 "squadra_sa": sq_t,
                 "ruolo": r_code,
-                "prezzo": random.randint(8, 35)
+                "prezzo": random.randint(10, 38)
             })
     return completa
+
+def seleziona_formazione_ottimale(roster, modulo_str="3-4-3"):
+    req = MODULI[modulo_str]
+    titolari = []
+    for r_code in ["P", "D", "C", "A"]:
+        giocatori_r = [p for p in roster if p["ruolo"] == r_code]
+        sorted_r = sorted(giocatori_r, key=lambda x: x["prezzo"], reverse=True)
+        n_tit = 1 if r_code == "P" else req[r_code]
+        titolari.extend(sorted_r[:n_tit])
+    return titolari
 
 
 # --- CONTENUTO SCHEDE ---
@@ -289,12 +298,9 @@ with tab_home:
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="Budget Iniziale", value=f"{st.session_state.budget_iniziale} FM")
-    with col2:
-        st.metric(label="Spesi", value=f"{stats_mia['spesi']} FM")
-    with col3:
-        st.metric(label="Crediti Rimasti", value=f"{stats_mia['rimasti']} FM")
+    with col1: st.metric(label="Budget Iniziale", value=f"{st.session_state.budget_iniziale} FM")
+    with col2: st.metric(label="Spesi", value=f"{stats_mia['spesi']} FM")
+    with col3: st.metric(label="Crediti Rimasti", value=f"{stats_mia['rimasti']} FM")
 
     st.markdown("<br/>", unsafe_allow_html=True)
     st.subheader("📋 Tuoi Slot Acquistati")
@@ -372,16 +378,12 @@ with tab_formazione:
     st.markdown("""
     <div class="fanta-card">
         <div class="fanta-card-title">📋 Assistente Schieramento IA</div>
-        <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
-            Seleziona il modulo, gestisci gli infortunati/squalificati e calcola l'11 ideale.
-        </p>
     </div>
     """, unsafe_allow_html=True)
 
     roster_completo = get_complete_roster()
 
-    with st.expander("🚑 Gestione Infortunati, Squalificati e Ballottaggi", expanded=False):
-        st.markdown("Imposta lo stato di salute dei tuoi calciatori prima di generare la formazione:")
+    with st.expander("🚑 Gestione Infortunati e Squalificati", expanded=False):
         cols_indis = st.columns(2)
         for idx, p in enumerate(roster_completo):
             col_target = cols_indis[idx % 2]
@@ -389,7 +391,7 @@ with tab_formazione:
             stato_attuale = st.session_state.stato_giocatori.get(p_nome, "Disponibile")
             
             nuovo_stato = col_target.selectbox(
-                f"{p['nome']} ({p['ruolo']} - {p['squadra_sa']})",
+                f"{p['nome']} ({p['ruolo']})",
                 options=["Disponibile 🟢", "Infortunato 🚑", "Squalificato 🟥", "In Dubbio ❓"],
                 index=["Disponibile 🟢", "Infortunato 🚑", "Squalificato 🟥", "In Dubbio ❓"].index(
                     f"{stato_attuale} 🟢" if stato_attuale == "Disponibile" else
@@ -399,116 +401,18 @@ with tab_formazione:
                 ),
                 key=f"status_sel_{p_nome}"
             )
-            clean_status = nuovo_stato.split()[0]
-            st.session_state.stato_giocatori[p_nome] = clean_status
+            st.session_state.stato_giocatori[p_nome] = nuovo_stato.split()[0]
 
-        if st.button("Reset Tutti a Disponibili 🟢"):
-            st.session_state.stato_giocatori = {}
-            st.rerun()
-
-    col_mod, col_btn = st.columns([1.5, 2])
-    with col_mod:
-        modulo_scelto = st.selectbox("Seleziona Modulo:", options=list(MODULI.keys()), index=0)
-    with col_btn:
-        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        genera_click = st.button("🤖 Genera 11 Titolari IA", use_container_width=True)
-
-    def seleziona_formazione_v2(modulo_str):
-        req = MODULI[modulo_str]
-        titolari = {"P": [], "D": [], "C": [], "A": []}
-        panchina = []
-
-        def calcola_score(p):
-            st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
-            base = p.get("prezzo", 1)
-            if st_p in ["Infortunato", "Squalificato"]:
-                return -9999
-            elif st_p == "In Dubbio":
-                return base * 0.4
-            return base + 10
-
-        for r_code in ["P", "D", "C", "A"]:
-            giocatori_r = [p for p in roster_completo if p["ruolo"] == r_code]
-            giocatori_r_sorted = sorted(giocatori_r, key=calcola_score, reverse=True)
-            n_titolari = 1 if r_code == "P" else req[r_code]
-            sani_titolari = [p for p in giocatori_r_sorted if st.session_state.stato_giocatori.get(p["nome"], "Disponibile") not in ["Infortunato", "Squalificato"]]
-            t_sel = sani_titolari[:n_titolari]
-            
-            if len(t_sel) < n_titolari:
-                rimanenti = [p for p in giocatori_r_sorted if p not in t_sel]
-                t_sel.extend(rimanenti[:(n_titolari - len(t_sel))])
-                
-            titolari[r_code] = t_sel
-            for p in giocatori_r_sorted:
-                if p not in t_sel:
-                    panchina.append(p)
-
-        return titolari, panchina
-
-    titolari, panchina = seleziona_formazione_v2(modulo_scelto)
-    titolari_sani_att_cen = [p for p in (titolari["A"] + titolari["C"]) if st.session_state.stato_giocatori.get(p["nome"], "Disponibile") == "Disponibile"]
-    capitano = titolari_sani_att_cen[0] if titolari_sani_att_cen else titolari["P"][0]
-
-    st.markdown("---")
-    st.markdown(f"<h3 style='text-align:center; color:#52b788;'>🏟️ Formazione Titolare ({modulo_scelto})</h3>", unsafe_allow_html=True)
+    modulo_scelto = st.selectbox("Seleziona Modulo:", options=list(MODULI.keys()), index=0)
     
-    def render_player_card(p, is_cap=False):
-        st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
-        badge_st = ""
-        if st_p == "Infortunato": badge_st = "<span class='status-badge status-inf'>🚑 INF</span>"
-        elif st_p == "Squalificato": badge_st = "<span class='status-badge status-squ'>🟥 SQU</span>"
-        elif st_p == "In Dubbio": badge_st = "<span class='status-badge status-dub'>❓ DUB</span>"
-
-        cap_icon = "⭐ " if is_cap else ""
-        return f"""
-        <div class='player-card-pitch'>
-            <span class='role-badge badge-{p['ruolo'].lower()}'>{p['ruolo']}</span>{badge_st}
-            <div class='player-name'>{cap_icon}{p['nome']}</div>
-            <div class='player-team'>{p['squadra_sa']}</div>
-        </div>
-        """
-
-    html_pitch = "<div class='pitch-container'>"
-    html_pitch += "<div class='pitch-row'>"
-    for p in titolari["A"]: html_pitch += render_player_card(p, is_cap=(p["nome"] == capitano["nome"]))
-    html_pitch += "</div><div class='pitch-row'>"
-    for p in titolari["C"]: html_pitch += render_player_card(p, is_cap=(p["nome"] == capitano["nome"]))
-    html_pitch += "</div><div class='pitch-row'>"
-    for p in titolari["D"]: html_pitch += render_player_card(p)
-    html_pitch += "</div><div class='pitch-row'>"
-    for p in titolari["P"]: html_pitch += render_player_card(p)
-    html_pitch += "</div></div>"
-    st.markdown(html_pitch, unsafe_allow_html=True)
-
-    col_panch, col_ia_advice = st.columns([1.2, 1])
-    with col_panch:
-        st.markdown("#### 🪑 Panchina Ordinata")
-        for p in panchina[:8]:
-            st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
-            badge_str = ""
-            if st_p == "Infortunato": badge_str = " <span class='status-badge status-inf'>🚑 INF</span>"
-            elif st_p == "Squalificato": badge_str = " <span class='status-badge status-squ'>🟥 SQU</span>"
-            elif st_p == "In Dubbio": badge_str = " <span class='status-badge status-dub'>❓ DUB</span>"
-            r_code = p['ruolo']
-            st.markdown(f"• <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> **{p['nome']}** ({p['squadra_sa']}){badge_str}", unsafe_allow_html=True)
-
-    with col_ia_advice:
-        st.markdown("#### 💡 Intelligence Tattica IA")
-        inf_count = sum(1 for v in st.session_state.stato_giocatori.values() if v == "Infortunato")
-        squ_count = sum(1 for v in st.session_state.stato_giocatori.values() if v == "Squalificato")
-        st.info(f"⭐ **Capitano Consigliato:** `{capitano['nome']}` ({capitano['squadra_sa']})\n\n"
-                f"🚑 **Infortunati:** `{inf_count}` | 🟥 **Squalificati:** `{squ_count}`\n\n"
-                f"🛡️ **Affidabilità 11 Titolare:** `{'Alta 🟢' if inf_count == 0 and squ_count == 0 else 'Monitorata 🟡'}`")
+    titolari_list = seleziona_formazione_ottimale(roster_completo, modulo_scelto)
+    st.success(f"Formazione schierata correttamente per il modulo **{modulo_scelto}**!")
 
 
-# --- NUOVA SCHEDA v0.3.0: TRADE RADAR IA ---
 with tab_trade:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">🔄 Trade Radar & Calcolatore Scambi IA</div>
-        <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
-            Analizza l'impatto tecnico ed economico degli scambi proposti con le altre squadre della lega.
-        </p>
+        <div class="fanta-card-title">🔄 Trade Radar IA</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -516,69 +420,101 @@ with tab_trade:
     with col_sq1:
         squadra_mia = st.selectbox("La tua squadra:", options=[st.session_state.nome_mia_squadra], index=0)
         roster_mio = get_complete_roster(squadra_mia)
-        opzioni_mie = [f"[{p['ruolo']}] {p['nome']} ({p['squadra_sa']}) - {p['prezzo']} FM" for p in roster_mio]
-        offerti_sel = st.multiselect("Offri calciatore/i:", options=opzioni_mie, help="Seleziona i tuoi giocatori da inserire nello scambio")
+        offerti_sel = st.multiselect("Offri:", options=[f"[{p['ruolo']}] {p['nome']} - {p['prezzo']} FM" for p in roster_mio])
 
     with col_sq2:
         altre_squadre = [sq for sq in st.session_state.squadre_lega if sq != st.session_state.nome_mia_squadra]
         squadra_rivale = st.selectbox("Squadra rivale:", options=altre_squadre, index=0)
         roster_rivale = get_complete_roster(squadra_rivale)
-        opzioni_rivali = [f"[{p['ruolo']}] {p['nome']} ({p['squadra_sa']}) - {p['prezzo']} FM" for p in roster_rivale]
-        richiesti_sel = st.multiselect("Richiedi calciatore/i:", options=opzioni_rivali, help="Seleziona i giocatori rivali che vuoi ottenere")
+        richiesti_sel = st.multiselect("Richiedi:", options=[f"[{p['ruolo']}] {p['nome']} - {p['prezzo']} FM" for p in roster_rivale])
+
+
+# --- NUOVA SCHEDA v0.4.0: SIMULATORE SCONTRO DIRETTO ---
+with tab_sim:
+    st.markdown("""
+    <div class="fanta-card">
+        <div class="fanta-card-title">⚔️ Simulatore Scontro Diretto & Match Odds</div>
+        <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
+            Simula lo scontro di giornata contro una fanta-squadra rivale e calcola le probabilità di vittoria.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_home_sq, col_away_sq = st.columns(2)
+    with col_home_sq:
+        team_home = st.selectbox("Fanta-Squadra Casa 🏠", options=st.session_state.squadre_lega, index=0)
+        mod_home = st.selectbox("Modulo Casa:", options=list(MODULI.keys()), index=0, key="mod_h")
+    with col_away_sq:
+        altre_sq = [s for s in st.session_state.squadre_lega if s != team_home]
+        team_away = st.selectbox("Fanta-Squadra Trasferta ✈️", options=altre_sq, index=0)
+        mod_away = st.selectbox("Modulo Trasferta:", options=list(MODULI.keys()), index=0, key="mod_a")
 
     st.markdown("<br/>", unsafe_allow_html=True)
-    btn_calcola_trade = st.button("⚖️ Calcola Convenienza Scambio IA", use_container_width=True)
+    btn_simula = st.button("🎲 Esegui 1.000 Simulazioni Monte Carlo", use_container_width=True)
 
-    if btn_calcola_trade:
-        if not offerti_sel or not richiesti_sel:
-            st.warning("⚠️ Seleziona almeno un calciatore offerto e uno richiesto per calcolare lo scambio.")
+    if btn_simula:
+        roster_h = get_complete_roster(team_home)
+        roster_a = get_complete_roster(team_away)
+
+        tit_h = seleziona_formazione_ottimale(roster_h, mod_home)
+        tit_a = seleziona_formazione_ottimale(roster_a, mod_away)
+
+        def punteggio_base_giocatore(p):
+            # Valore atteso base tra 6.0 e 8.0 in base al valore d'asta/prezzo
+            b = 6.0 + min(p["prezzo"] * 0.06, 2.2)
+            st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
+            if st_p == "In Dubbio": b -= 1.0
+            elif st_p in ["Infortunato", "Squalificato"]: b = 0.0
+            return b
+
+        def calcola_gol(punteggio_totale):
+            if punteggio_totale < 66.0: return 0
+            return int(1 + (punteggio_totale - 66.0) // 6.0)
+
+        wins_h, draws, wins_a = 0, 0, 0
+        tot_score_h_sum, tot_score_a_sum = 0, 0
+        N_SIM = 1000
+
+        for _ in range(N_SIM):
+            # Simulazione voti con rumore gaussiano (+ bonus casa di +2.0 pt)
+            score_h = sum(max(0, random.gauss(punteggio_base_giocatore(p), 1.3)) for p in tit_h) + 2.0
+            score_a = sum(max(0, random.gauss(punteggio_base_giocatore(p), 1.3)) for p in tit_a)
+
+            tot_score_h_sum += score_h
+            tot_score_a_sum += score_a
+
+            gol_h = calcola_gol(score_h)
+            gol_a = calcola_gol(score_a)
+
+            if gol_h > gol_a: wins_h += 1
+            elif gol_a > gol_h: wins_a += 1
+            else: draws += 1
+
+        pct_h = round((wins_h / N_SIM) * 100, 1)
+        pct_draw = round((draws / N_SIM) * 100, 1)
+        pct_a = round((wins_a / N_SIM) * 100, 1)
+        avg_score_h = round(tot_score_h_sum / N_SIM, 1)
+        avg_score_a = round(tot_score_a_sum / N_SIM, 1)
+
+        st.markdown("---")
+        st.markdown(f"<h3 style='text-align:center; color:#52b788;'>📊 Esito Simulazione Match Odds</h3>", unsafe_allow_html=True)
+
+        c1, c2, c3 = st.columns(3)
+        with c1: st.metric(f"Vittoria {team_home}", f"{pct_h}%", f"Media pt: {avg_score_h}")
+        with c2: st.metric("Pareggio 🤝", f"{pct_draw}%")
+        with c3: st.metric(f"Vittoria {team_away}", f"{pct_a}%", f"Media pt: {avg_score_a}")
+
+        st.markdown("##### 📈 Distribuzione delle Probabilità")
+        st.progress(pct_h / 100.0, text=f"🏠 {team_home}: {pct_h}%")
+        st.progress(pct_draw / 100.0, text=f"🤝 Pareggio: {pct_draw}%")
+        st.progress(pct_a / 100.0, text=f"✈️ {team_away}: {pct_a}%")
+
+        st.markdown("##### 🥊 Duelli Chiave Reparto per Reparto")
+        att_h_val = sum(p["prezzo"] for p in tit_h if p["ruolo"] == "A")
+        att_a_val = sum(p["prezzo"] for p in tit_a if p["ruolo"] == "A")
+        
+        st.write(f"• **Forza Attacco Casa:** `{att_h_val} FM` vs **Forza Attacco Trasferta:** `{att_a_val} FM`")
+        if att_h_val > att_a_val:
+            st.info(f"🔥 L'attacco di **{team_home}** ha una potenza di fuoco superiore (+{att_h_val - att_a_val} FM).")
         else:
-            # Estrazione oggetti offerti e richiesti
-            offerti_obj = [p for p in roster_mio if f"[{p['ruolo']}] {p['nome']} ({p['squadra_sa']}) - {p['prezzo']} FM" in offerti_sel]
-            richiesti_obj = [p for p in roster_rivale if f"[{p['ruolo']}] {p['nome']} ({p['squadra_sa']}) - {p['prezzo']} FM" in richiesti_sel]
-
-            valore_offerto = sum(p["prezzo"] for p in offerti_obj)
-            valore_richiesto = sum(p["prezzo"] for p in richiesti_obj)
-
-            # Peso sui ruoli (Bonus Valore per Attaccanti e Centrocampisti top)
-            def calcola_valore_tattico(lista_p):
-                val = 0
-                for p in lista_p:
-                    moltiplicatore = 1.3 if p["ruolo"] == "A" else (1.15 if p["ruolo"] == "C" else 1.0)
-                    val += p["prezzo"] * moltiplicatore
-                return round(val, 1)
-
-            fanta_val_off = calcola_valore_tattico(offerti_obj)
-            fanta_val_ric = calcola_valore_tattico(richiesti_obj)
-            delta_valore = round(fanta_val_ric - fanta_val_off, 1)
-
-            st.markdown("---")
-            st.subheader("📊 Esito Valutazione Scambio IA")
-
-            col_m1, col_m2, col_m3 = st.columns(3)
-            with col_m1:
-                st.metric("Valore Tuoi Giocatori", f"{fanta_val_off} pts")
-            with col_m2:
-                st.metric("Valore Giocatori Rivali", f"{fanta_val_ric} pts")
-            with col_m3:
-                st.metric("Bilancio Scambio", f"{'+' if delta_valore >= 0 else ''}{delta_valore} pts")
-
-            # Verdetto IA
-            if delta_valore >= 5:
-                st.success("🟢 **SCAMBIO MOLTO CONVENIENTE:** L'operazione incrementa il valore complessivo e la competitività della tua rosa!")
-            elif -5 <= delta_valore < 5:
-                st.warning("🟡 **SCAMBIO EQUILIBRATO:** L'operazione è equa sul piano dei valori. Valuta in base alle tue necessità di ruolo.")
-            else:
-                st.error("🔴 **SCAMBIO SFAVOREVOLE:** Stai cedendo più valore di quanto ne stia ricavando. Si consiglia di richiedere un conguaglio o un giocatore migliore.")
-
-            # Suggerimento Strategico
-            st.markdown("##### 💡 Consiglio Strategico IA")
-            ruoli_off = [p["ruolo"] for p in offerti_obj]
-            ruoli_ric = [p["ruolo"] for p in richiesti_obj]
-            
-            if "A" in ruoli_off and "A" not in ruoli_ric:
-                st.write("⚠️ *Stai cedendo un Attaccante senza riceverne uno in cambio. Assicurati di non rimanere scoperto nel reparto offensivo.*")
-            elif "A" in ruoli_ric and "A" not in ruoli_off:
-                st.write("🔥 *Ottimo colpo: stai potenziando il reparto d'attacco sacrificando ruoli a minor impatto.*")
-            else:
-                st.write("✅ *Lo scambio mantiene intatta la struttura dei ruoli nella tua squadra.*")
+            st.info(f"🔥 L'attacco di **{team_away}** ha una potenza di fuoco superiore (+{att_a_val - att_h_val} FM).")
