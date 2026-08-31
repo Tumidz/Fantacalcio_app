@@ -4,16 +4,14 @@ import random
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant v0.5.0",
+    page_title="FantaIA Assistant v0.6.0",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Immagini di sfondo
 URL_SFONDO_STADIO = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=1920&auto=format&fit=crop"
 
-# DATI CALENDARIO E DIFFICOLTÀ (FDR: 1 Facile -> 5 Difficile)
 CALENDARIO_SERIE_A = {
     "INT": {"opp": "VEN", "fdr": 1, "casa": True},
     "MIL": {"opp": "JUV", "fdr": 4, "casa": False},
@@ -51,6 +49,11 @@ if "tutti_acquisti" not in st.session_state:
 
 if "stato_giocatori" not in st.session_state:
     st.session_state.stato_giocatori = {}
+
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = [
+        {"role": "assistant", "content": "Ciao Mister! Sono il tuo Fanta-Coach IA. Dimmi i tuoi dubbi di formazione o usa i prompt rapidi qui sotto!"}
+    ]
 
 MODULI = {
     "3-4-3": {"D": 3, "C": 4, "A": 3},
@@ -216,18 +219,19 @@ st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.5.0 - FDR & Match Difficulty Engine</span>
+    <span class="version-badge">v0.6.0 - Fanta-Coach Chatbot & Quick Prompts</span>
 </div>
 """, unsafe_allow_html=True)
 
 # 5. Navigazione a Schede
-tab_home, tab_asta, tab_radar, tab_formazione, tab_trade, tab_sim = st.tabs([
+tab_home, tab_asta, tab_radar, tab_formazione, tab_coach, tab_trade, tab_sim = st.tabs([
     "🏠 Home", 
     "🔨 Asta Live", 
     "📊 Lega", 
     "📋 Formazione FDR",
+    "💬 Fanta-Coach",
     "🔄 Trade",
-    "⚔️ Scontro Diretto"
+    "⚔️ Scontro"
 ])
 
 def get_stats_squadra(nome_squadra):
@@ -287,7 +291,6 @@ def seleziona_formazione_fdr(roster, modulo_str="3-4-3"):
         
         _, fdr = get_fdr_info(p["squadra_sa"])
         base_val = p.get("prezzo", 10)
-        # Penalizzazione o bonus basati sull'indice FDR dell'avversario
         fdr_modifier = (3 - fdr) * 3.5 
         dubbio_penalty = -15.0 if st_p == "In Dubbio" else 0.0
         return base_val + fdr_modifier + dubbio_penalty
@@ -302,7 +305,43 @@ def seleziona_formazione_fdr(roster, modulo_str="3-4-3"):
 
     return titolari, panchina
 
-# SCHEDE INTERFACCIA
+
+# --- LOGICA DEL FANTA-COACH ---
+def rispondi_fanta_coach(user_query):
+    query_lower = user_query.lower()
+    roster = get_complete_roster()
+    
+    indisponibili = [p["nome"] for p in roster if st.session_state.stato_giocatori.get(p["nome"]) in ["Infortunato", "Squalificato"]]
+    in_dubbio = [p["nome"] for p in roster if st.session_state.stato_giocatori.get(p["nome"]) == "In Dubbio"]
+    
+    if "modulo" in query_lower or "3-4-3" in query_lower or "4-3-3" in query_lower:
+        attaccanti_top = [p for p in roster if p["ruolo"] == "A" and p["prezzo"] >= 20]
+        if len(attaccanti_top) >= 3:
+            return "💡 **Consiglio Modulo:** Con la qualità dei tuoi attaccanti ti consiglio decisamente il **3-4-3** per massimizzare i bonus in avanti!"
+        else:
+            return "💡 **Consiglio Modulo:** Ti conviene puntare su un **4-4-2** o **4-3-3** per rinforzare il centrocampo e sfruttare i modifcatori di difesa."
+    
+    elif "infortunat" in query_lower or "indisponibil" in query_lower or "chi manca" in query_lower:
+        if not indisponibili and not in_dubbio:
+            return "🟢 Buone notizie Mister! La rosa è al completo e non hai infortunati o squalificati segnalati."
+        res = "🚨 **Report Indisponibili:**\n"
+        if indisponibili:
+            res += f"• **Out:** {', '.join(indisponibili)}\n"
+        if in_dubbio:
+            res += f"• **In dubbio:** {', '.join(in_dubbio)}\n"
+        return res
+
+    elif "consiglio" in query_lower or "titolari" in query_lower or "schiero" in query_lower:
+        tit, _ = seleziona_formazione_fdr(roster, "3-4-3")
+        att_names = [p["nome"] for p in tit["A"]]
+        cent_names = [p["nome"] for p in tit["C"][:3]]
+        return f"⚽ **Consiglio Formazione Express:**\nIn attacco vai con **{', '.join(att_names)}** (partite favorevoli secondo l'FDR). A centrocampo perni inamovibili: **{', '.join(cent_names)}**."
+
+    else:
+        return f"🤖 Ho analizzato la rosa: per questa giornata ti suggerisco di prestare attenzione all'indice di difficoltà partita (FDR) dei tuoi difensori. Schiera la linea a 4 con FDR più basso!"
+
+
+# --- SCHEDE INTERFACCIA ---
 with tab_home:
     st.markdown("<div class='fanta-card'><div class='fanta-card-title'>📊 Stato Rosa</div></div>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3)
@@ -311,7 +350,7 @@ with tab_home:
     c3.metric("Rimasti", f"{stats_mia['rimasti']} FM")
 
 with tab_asta:
-    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>🔨 Aggiudicazione Giocatori</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>🔨 Registrazione Asta</div></div>", unsafe_allow_html=True)
     with st.form("form_asta", clear_on_submit=True):
         f_sq = st.selectbox("Acquirente", options=st.session_state.squadre_lega)
         f_nome = st.text_input("Calciatore")
@@ -328,14 +367,13 @@ with tab_asta:
                 st.rerun()
 
 with tab_radar:
-    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>📊 Lega Standings</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>📊 Classifica Lega</div></div>", unsafe_allow_html=True)
     dati = [{"Fantasquadra": sq, "Rimasti": f"{get_stats_squadra(sq)['rimasti']} FM", "Totali": f"{get_stats_squadra(sq)['totali']}/25"} for sq in st.session_state.squadre_lega]
     st.dataframe(pd.DataFrame(dati), use_container_width=True)
 
 with tab_formazione:
-    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>📋 Formazione Ottimizzata con Algoritmo FDR</div></div>", unsafe_allow_html=True)
+    st.markdown("<div class='fanta-card'><div class='fanta-card-title'>📋 Formazione FDR</div></div>", unsafe_allow_html=True)
     roster_completo = get_complete_roster()
-    
     modulo_scelto = st.selectbox("Modulo Tattico:", options=list(MODULI.keys()), index=0)
     tit_fdr, panch_fdr = seleziona_formazione_fdr(roster_completo, modulo_scelto)
 
@@ -361,10 +399,48 @@ with tab_formazione:
     html_pitch += "</div>"
     st.markdown(html_pitch, unsafe_allow_html=True)
 
-    st.markdown("##### 🪑 Panchina e Matchup")
-    for p in panch_fdr[:7]:
-        b_fdr, _ = get_fdr_info(p["squadra_sa"])
-        st.markdown(f"• <span class='role-badge badge-{p['ruolo'].lower()}'>{p['ruolo']}</span> **{p['nome']}** ({p['squadra_sa']}) - {b_fdr}", unsafe_allow_html=True)
+
+# --- NUOVA SCHEDA v0.6.0: FANTA-COACH CHATBOT ---
+with tab_coach:
+    st.markdown("""
+    <div class="fanta-card">
+        <div class="fanta-card-title">💬 Fanta-Coach IA & Prompts dell'Ultimo Minuto</div>
+        <p style="color:#cbd5e0; font-size:0.85rem; margin-bottom:0;">
+            Chiedi un consiglio rapido al tuo assistente o clicca su uno dei prompt preimpostati.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("##### ⚡ Quick Tactical Prompts")
+    c_p1, c_p2, c_p3 = st.columns(3)
+    
+    prompt_click = None
+    if c_p1.button("⚽ Chi schiero oggi?", use_container_width=True):
+        prompt_click = "Chi schiero oggi in attacco?"
+    if c_p2.button("📐 Meglio 3-4-3 o 4-3-3?", use_container_width=True):
+        prompt_click = "Meglio schierare il 3-4-3 o il 4-3-3?"
+    if c_p3.button("🚑 Report Indisponibili", use_container_width=True):
+        prompt_click = "Chi sono gli infortunati e gli squalificati?"
+
+    st.markdown("---")
+
+    # Render Storico Chat
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Gestione Input o Prompt Rapido
+    user_input = st.chat_input("Scrivi un messaggio al Fanta-Coach...")
+    query_da_elaborare = prompt_click if prompt_click else user_input
+
+    if query_da_elaborare:
+        st.session_state.chat_messages.append({"role": "user", "content": query_da_elaborare})
+        with st.chat_message("user"):
+            st.markdown(query_da_elaborare)
+
+        risposta_bot = rispondi_fanta_coach(query_da_elaborare)
+        st.session_state.chat_messages.append({"role": "assistant", "content": risposta_bot})
+        st.rerun()
 
 with tab_trade:
     st.markdown("<div class='fanta-card'><div class='fanta-card-title'>🔄 Trade Radar</div></div>", unsafe_allow_html=True)
