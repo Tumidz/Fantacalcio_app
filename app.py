@@ -3,7 +3,7 @@ import pandas as pd
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant v0.1.0",
+    page_title="FantaIA Assistant v0.1.1",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -17,14 +17,29 @@ URL_MARTELLO_ASTA = "https://cdn3d.iconscout.com/3d/premium/thumb/auction-gavel-
 if "budget_iniziale" not in st.session_state:
     st.session_state.budget_iniziale = 500
 
-if "rosa" not in st.session_state:
-    # Struttura di ogni calciatore: {"nome": str, "squadra": str, "ruolo": str, "prezzo": int}
-    st.session_state.rosa = []
+if "nome_mia_squadra" not in st.session_state:
+    st.session_state.nome_mia_squadra = "Mia Squadra ⭐️"
+
+if "squadre_lega" not in st.session_state:
+    st.session_state.squadre_lega = [
+        "Mia Squadra ⭐️",
+        "FC Avversario 1",
+        "FC Avversario 2",
+        "FC Avversario 3",
+        "FC Avversario 4",
+        "FC Avversario 5",
+        "FC Avversario 6",
+        "FC Avversario 7"
+    ]
+
+if "tutti_acquisti" not in st.session_state:
+    # Struttura: {"fantasquadra": str, "nome": str, "squadra_sa": str, "ruolo": str, "prezzo": int}
+    st.session_state.tutti_acquisti = []
 
 # Slot standard Fantacalcio
 SLOT_MAX = {"P": 3, "D": 8, "C": 8, "A": 6}
 
-# 3. CSS Avanzato (Unione Grafica v0.0.4 + Stile Input Form)
+# 3. CSS Avanzato (Grafica Unificata v0.0.4 + Tabella Avversari)
 custom_css = f"""
 <style>
     .stApp {{
@@ -60,7 +75,7 @@ custom_css = f"""
     /* Pulsanti di navigazione */
     div[data-baseweb="tab-list"] {{
         justify-content: center !important;
-        gap: 10px !important;
+        gap: 8px !important;
         border-bottom: none !important;
         background-color: transparent !important;
         padding-bottom: 10px !important;
@@ -75,14 +90,14 @@ custom_css = f"""
         background-color: rgba(20, 32, 44, 0.8) !important;
         border: 1.5px solid #3d5a45 !important;
         border-radius: 10px !important;
-        padding: 8px 16px !important;
+        padding: 8px 14px !important;
         transition: all 0.25s ease-in-out !important;
     }}
 
     button[data-baseweb="tab"] p {{
         color: #d1d5db !important;
         font-weight: 600 !important;
-        font-size: 0.95rem !important;
+        font-size: 0.9rem !important;
         margin: 0 !important;
     }}
 
@@ -141,161 +156,207 @@ st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.1.0 - Modulo Asta Attivo</span>
+    <span class="version-badge">v0.1.1 - League & Radar Avversari</span>
 </div>
 """, unsafe_allow_html=True)
 
 # 5. Navigazione a Schede
-tab_home, tab_asta, tab_formazione, tab_scambi = st.tabs([
+tab_home, tab_asta, tab_radar, tab_formazione = st.tabs([
     "🏠 Home", 
-    "🔨 Asta", 
-    "📋 Formazione", 
-    "🔄 Scambi"
+    "🔨 Asta Live", 
+    "📊 Radar Lega", 
+    "📋 Formazione"
 ])
 
-# --- CALCOLI DINAMICI BUDGET & SLOT ---
-crediti_spesi = sum(p["prezzo"] for p in st.session_state.rosa)
-crediti_rimasti = st.session_state.budget_iniziale - crediti_spesi
+# --- FUNZIONI UTILI DI CALCOLO LEGA ---
+def get_stats_squadra(nome_squadra):
+    acquisti = [p for p in st.session_state.tutti_acquisti if p["fantasquadra"] == nome_squadra]
+    spesi = sum(p["prezzo"] for p in acquisti)
+    rimasti = st.session_state.budget_iniziale - spesi
+    count_p = sum(1 for p in acquisti if p["ruolo"] == "P")
+    count_d = sum(1 for p in acquisti if p["ruolo"] == "D")
+    count_c = sum(1 for p in acquisti if p["ruolo"] == "C")
+    count_a = sum(1 for p in acquisti if p["ruolo"] == "A")
+    totali = len(acquisti)
+    slot_mancanti = 25 - totali
+    return {
+        "squadra": nome_squadra,
+        "acquisti": acquisti,
+        "spesi": spesi,
+        "rimasti": rimasti,
+        "P": count_p, "D": count_d, "C": count_c, "A": count_a,
+        "totali": totali,
+        "slot_mancanti": slot_mancanti
+    }
 
-# Conteggio giocatori per ruolo
-conteggio_ruoli = {"P": 0, "D": 0, "C": 0, "A": 0}
-for p in st.session_state.rosa:
-    if p["ruolo"] in conteggio_ruoli:
-        conteggio_ruoli[p["ruolo"]] += 1
-
-totale_giocatori = len(st.session_state.rosa)
-slot_mancanti_totali = 25 - totale_giocatori
+stats_mia_squadra = get_stats_squadra(st.session_state.nome_mia_squadra)
 
 # --- CONTENUTO SCHEDE ---
 
 with tab_home:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">📊 Riepilogo Generato dall'IA</div>
+        <div class="fanta-card-title">📊 Centro Comando & Situazione Rosa</div>
         <p style="color:#cbd5e0; font-size:0.9rem;">
-            Ecco lo stato attuale della tua squadra durante l'asta:
+            Stato attuale della tua fanta-squadra:
         </p>
     </div>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Crediti Iniziali", value=f"{st.session_state.budget_iniziale} FM")
+        st.metric(label="Budget Iniziale", value=f"{st.session_state.budget_iniziale} FM")
     with col2:
-        st.metric(label="Crediti Spesi", value=f"{crediti_spesi} FM")
+        st.metric(label="Spesi", value=f"{stats_mia_squadra['spesi']} FM")
     with col3:
-        st.metric(label="Crediti Rimasti", value=f"{crediti_rimasti} FM")
+        st.metric(label="Crediti Rimasti", value=f"{stats_mia_squadra['rimasti']} FM")
 
     st.markdown("<br/>", unsafe_allow_html=True)
-    st.subheader("📋 Composizione Rosa")
+    st.subheader("📋 Tuoi Slot Completati")
     col_p, col_d, col_c, col_a = st.columns(4)
     with col_p:
-        st.metric(label="Portieri", value=f"{conteggio_ruoli['P']} / 3")
+        st.metric(label="Portieri", value=f"{stats_mia_squadra['P']} / 3")
     with col_d:
-        st.metric(label="Difensori", value=f"{conteggio_ruoli['D']} / 8")
+        st.metric(label="Difensori", value=f"{stats_mia_squadra['D']} / 8")
     with col_c:
-        st.metric(label="Centrocampisti", value=f"{conteggio_ruoli['C']} / 8")
+        st.metric(label="Centrocampisti", value=f"{stats_mia_squadra['C']} / 8")
     with col_a:
-        st.metric(label="Attaccanti", value=f"{conteggio_ruoli['A']} / 6")
+        st.metric(label="Attaccanti", value=f"{stats_mia_squadra['A']} / 6")
 
 
 with tab_asta:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">🔨 Centro Operativo Asta Live</div>
+        <div class="fanta-card-title">🔨 Registrazione Chiamate Asta</div>
         <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
-            Imposta il budget iniziale, registra ogni acquisto e segui i suggerimenti dell'IA.
+            Registra rapidamente i calciatori aggiudicati a te o agli altri fanta-allenatori.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Impostazione Budget Iniziale
-    with st.expander("⚙️ Configurazione Budget Asta", expanded=False):
-        nuovo_budget = st.number_input(
-            "Budget Iniziale (Crediti Totali):", 
-            min_value=100, 
-            max_value=2000, 
-            value=st.session_state.budget_iniziale, 
-            step=50
-        )
-        if st.button("Aggiorna Budget Iniziale"):
-            st.session_state.budget_iniziale = nuovo_budget
-            st.rerun()
-
-    # Form Registrazione Rapida Giocatore
-    st.markdown("### 🛒 Registra un Acquisto")
-    with st.form("form_acquisto", clear_on_submit=True):
-        col_nome, col_squadra = st.columns([2, 1])
+    # Form Registrazione Chiamata Asta
+    with st.form("form_acquisto_unificato", clear_on_submit=True):
+        st.markdown("##### 🛒 Nuovo Calciatore Aggiudicato")
+        
+        col_sq_fanta, col_nome = st.columns([1.2, 1.8])
+        with col_sq_fanta:
+            fantasquadra_acquirente = st.selectbox("Acquirente", options=st.session_state.squadre_lega)
         with col_nome:
             nome_giocatore = st.text_input("Nome Calciatore", placeholder="es. Lautaro Martinez")
-        with col_squadra:
-            squadra_serie_a = st.text_input("Squadra", placeholder="es. Inter")
 
-        col_ruolo, col_prezzo = st.columns([1, 1])
+        col_squadra_sa, col_ruolo, col_prezzo = st.columns([1, 1, 1])
+        with col_squadra_sa:
+            squadra_serie_a = st.text_input("Squadra Serie A", placeholder="es. Inter")
         with col_ruolo:
             ruolo = st.selectbox("Ruolo", options=["P", "D", "C", "A"])
         with col_prezzo:
-            prezzo = st.number_input("Prezzo d'Asta (FM)", min_value=1, max_value=crediti_rimasti if crediti_rimasti > 0 else 1, value=1)
+            stats_acq = get_stats_squadra(fantasquadra_acquirente)
+            max_p = max(1, stats_acq["rimasti"])
+            prezzo = st.number_input("Prezzo FM", min_value=1, max_value=max_p, value=1)
 
-        submit_btn = st.form_submit_button("✅ Aggiungi alla Tua Rosa")
+        submit_btn = st.form_submit_button("✅ Registra Aggiudicazione")
 
         if submit_btn:
             if nome_giocatore.strip() == "":
                 st.error("Inserisci il nome del calciatore!")
-            elif conteggio_ruoli[ruolo] >= SLOT_MAX[ruolo]:
-                st.warning(f"Hai già raggiunto il limite massimo di {SLOT_MAX[ruolo]} per il ruolo {ruolo}!")
+            elif stats_acq[ruolo] >= SLOT_MAX[ruolo]:
+                st.warning(f"{fantasquadra_acquirente} ha già raggiunto il limite di {SLOT_MAX[ruolo]} per il ruolo {ruolo}!")
             else:
-                # Salva nel quaderno di memoria
-                st.session_state.rosa.append({
+                st.session_state.tutti_acquisti.append({
+                    "fantasquadra": fantasquadra_acquirente,
                     "nome": nome_giocatore.strip(),
-                    "squadra": squadra_serie_a.strip().upper(),
+                    "squadra_sa": squadra_serie_a.strip().upper(),
                     "ruolo": ruolo,
                     "prezzo": int(prezzo)
                 })
-                st.success(f"{nome_giocatore} aggiunto con successo per {prezzo} FM!")
+                st.success(f"{nome_giocatore} assegnato a {fantasquadra_acquirente} per {prezzo} FM!")
                 st.rerun()
 
     st.markdown("---")
 
-    # Consigliere IA di Spesa
-    st.markdown("### 💡 Consigliere IA Budget Massimo")
-    if slot_mancanti_totali > 0:
-        # Riserva minima 1 FM per ogni slot rimasto da coprire
-        riserva_altri_slot = slot_mancanti_totali - 1
-        max_spendibile_singolo = max(1, crediti_rimasti - riserva_altri_slot)
-        
-        st.info(f"💰 **Crediti Rimasti:** `{crediti_rimasti} FM` | **Slot da completare:** `{slot_mancanti_totali}`\n\n"
-                f"⚠️ **Prezzo Max Consigliato per 1 top player:** `{max_spendibile_singolo} FM` *(ti permetterà di comprare tutti i restanti calciatori a 1 FM)*.")
-    else:
-        st.success("🎉 Complimenti! Hai completato la tua rosa di 25 giocatori!")
+    # Consigliere IA Tattico per l'Asta
+    st.markdown("### 💡 Intelligence IA Competitiva")
+    
+    # Trova il rivale più ricco
+    altre_stats = [get_stats_squadra(sq) for sq in st.session_state.squadre_lega if sq != st.session_state.nome_mia_squadra]
+    if altre_stats:
+        ricco = max(altre_stats, key=lambda x: x["rimasti"])
+        st.info(f"🏆 **Rivale più pericoloso:** `{ricco['squadra']}` con **{ricco['rimasti']} FM** rimasti ({ricco['A']}/6 Attaccanti).\n\n"
+                f"💡 **Tuo Budget Rimasto:** `{stats_mia_squadra['rimasti']} FM`")
 
     st.markdown("---")
 
-    # Lista e Gestione della Rosa Acquistata
-    st.markdown("### 📋 La Tua Rosa Acquistata")
-    if len(st.session_state.rosa) == 0:
-        st.write("Nessun calciatore acquistato finora. Compila il modulo in alto per iniziare!")
-    else:
-        # Visualizzazione calciatori per ruolo
-        for r_code, r_name in [("P", "Portieri"), ("D", "Difensori"), ("C", "Centrocampisti"), ("A", "Attaccanti")]:
-            giocatori_ruolo = [p for p in st.session_state.rosa if p["ruolo"] == r_code]
-            if giocatori_ruolo:
-                st.markdown(f"#### <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> {r_name} ({len(giocatori_ruolo)}/{SLOT_MAX[r_code]})", unsafe_allow_html=True)
-                for idx, player in enumerate(st.session_state.rosa):
-                    if player["ruolo"] == r_code:
-                        col_info, col_del = st.columns([4, 1])
-                        with col_info:
-                            st.write(f"• **{player['nome']}** ({player['squadra']}) — **{player['prezzo']} FM**")
-                        with col_del:
-                            if st.button("❌", key=f"del_{idx}"):
-                                st.session_state.rosa.pop(idx)
-                                st.rerun()
-
-        # Pulsante Reset Totale
-        st.markdown("<br/>", unsafe_allow_html=True)
-        if st.button("🗑️ Svuota Rosa e Ricomincia Asta"):
-            st.session_state.rosa = []
+    # Gestione Impostazioni Lega
+    with st.expander("⚙️ Personalizza Nomi Squadre & Budget Lega", expanded=False):
+        nuovo_budget = st.number_input("Budget Iniziale per tutti (FM):", min_value=100, max_value=2000, value=st.session_state.budget_iniziale, step=50)
+        
+        st.write("**Rinomina la tua Squadra:**")
+        mio_nome = st.text_input("Tuo Nome", value=st.session_state.nome_mia_squadra)
+        
+        if st.button("Salva Impostazioni Lega"):
+            st.session_state.budget_iniziale = nuovo_budget
+            if mio_nome.strip() != "":
+                # Aggiorna il nome nei vecchi acquisti se cambiato
+                old_name = st.session_state.nome_mia_squadra
+                st.session_state.nome_mia_squadra = mio_nome.strip()
+                st.session_state.squadre_lega[0] = mio_nome.strip()
+                for p in st.session_state.tutti_acquisti:
+                    if p["fantasquadra"] == old_name:
+                        p["fantasquadra"] = mio_nome.strip()
             st.rerun()
+
+
+with tab_radar:
+    st.markdown("""
+    <div class="fanta-card">
+        <div class="fanta-card-title">📊 Classifica Crediti & Rose della Lega</div>
+        <p style="color:#cbd5e0; font-size:0.9rem;">
+            Panoramica in tempo reale di tutte le fantasquadre partecipanti.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Costruzione Tabella Riassuntiva Lega
+    dati_tabella = []
+    for sq in st.session_state.squadre_lega:
+        st_sq = get_stats_squadra(sq)
+        dati_tabella.append({
+            "Fantasquadra": sq,
+            "Crediti Rimasti": f"{st_sq['rimasti']} FM",
+            "Spesi": f"{st_sq['spesi']} FM",
+            "P": f"{st_sq['P']}/3",
+            "D": f"{st_sq['D']}/8",
+            "C": f"{st_sq['C']}/8",
+            "A": f"{st_sq['A']}/6",
+            "Totali": f"{st_sq['totali']}/25"
+        })
+
+    df_lega = pd.DataFrame(dati_tabella)
+    st.dataframe(df_lega, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # Ispezione Singola Rosa
+    st.markdown("### 🔍 Ispeziona Rosa Avversaria")
+    squadra_scelta = st.selectbox("Seleziona una squadra da analizzare:", options=st.session_state.squadre_lega)
+    
+    st_scelta = get_stats_squadra(squadra_scelta)
+    if len(st_scelta["acquisti"]) == 0:
+        st.write(f"Nessun calciatore acquistato da {squadra_scelta}.")
+    else:
+        for r_code, r_name in [("P", "Portieri"), ("D", "Difensori"), ("C", "Centrocampisti"), ("A", "Attaccanti")]:
+            giocatori_r = [p for p in st_scelta["acquisti"] if p["ruolo"] == r_code]
+            if giocatori_r:
+                st.markdown(f"##### <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> {r_name}", unsafe_allow_html=True)
+                for idx, player in enumerate(st.session_state.tutti_acquisti):
+                    if player["fantasquadra"] == squadra_scelta and player["ruolo"] == r_code:
+                        col_i, col_d = st.columns([4, 1])
+                        with col_i:
+                            st.write(f"• **{player['nome']}** ({player['squadra_sa']}) — **{player['prezzo']} FM**")
+                        with col_d:
+                            if st.button("❌", key=f"del_all_{idx}"):
+                                st.session_state.tutti_acquisti.pop(idx)
+                                st.rerun()
 
 
 with tab_formazione:
@@ -303,15 +364,7 @@ with tab_formazione:
     <div class="fanta-card">
         <div class="fanta-card-title">📋 Assistente Schieramento (In arrivo nella v0.2.0)</div>
         <p style="color:#cbd5e0; font-size:0.9rem;">
-            Nella versione 0.2.0, l'IA analizzerà i giocatori acquistati nella rosa sopra e ti dirà chi schierare titolare giornata per giornata!
+            Il Modulo Asta v0.1.1 è ora completo! Prossimo step: l'IA per schierare la formazione ideale.
         </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with tab_scambi:
-    st.markdown("""
-    <div class="fanta-card">
-        <div class="fanta-card-title">🔄 Area Scambi (In arrivo nella v0.3.0)</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">Sezione riservata al calcolatore convenienza trade.</p>
     </div>
     """, unsafe_allow_html=True)
