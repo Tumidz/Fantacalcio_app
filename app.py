@@ -4,7 +4,7 @@ import random
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant v0.2.0",
+    page_title="FantaIA Assistant v0.2.1",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -30,7 +30,11 @@ if "squadre_lega" not in st.session_state:
 if "tutti_acquisti" not in st.session_state:
     st.session_state.tutti_acquisti = []
 
-# Configurazione Moduli Tattici (Difensori, Centrocampisti, Attaccanti)
+# Dizionario per lo stato di forma dei giocatori: nome -> "Disponibile", "Infortunato", "Squalificato", "In Dubbio"
+if "stato_giocatori" not in st.session_state:
+    st.session_state.stato_giocatori = {}
+
+# Configurazione Moduli Tattici
 MODULI = {
     "3-4-3": {"D": 3, "C": 4, "A": 3},
     "4-3-3": {"D": 4, "C": 3, "A": 3},
@@ -42,7 +46,7 @@ MODULI = {
 
 SLOT_MAX = {"P": 3, "D": 8, "C": 8, "A": 6}
 
-# 3. CSS Avanzato per Campo Tattico e Card
+# 3. CSS Avanzato per Campo Tattico, Card e Badge Indisponibili
 custom_css = f"""
 <style>
     .stApp {{
@@ -135,6 +139,20 @@ custom_css = f"""
     .badge-c {{ background-color: #2980b9; }}
     .badge-a {{ background-color: #c0392b; }}
 
+    /* Badge Stato Forma */
+    .status-badge {{
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: bold;
+        display: inline-block;
+        margin-left: 4px;
+    }}
+    .status-inf {{ background-color: #c0392b; color: white; }}
+    .status-squ {{ background-color: #d35400; color: white; }}
+    .status-dub {{ background-color: #f39c12; color: black; }}
+    .status-ok {{ background-color: #27ae60; color: white; }}
+
     .fanta-card {{
         background: rgba(22, 34, 47, 0.85);
         border: 1px solid #243447;
@@ -151,7 +169,7 @@ custom_css = f"""
         margin-bottom: 10px;
     }}
 
-    /* STILE CAMPO DA GIOCO TATICO */
+    /* STILE CAMPO DA GIOCO TATTICO */
     .pitch-container {{
         background: linear-gradient(180deg, #1b4d27 0%, #11331a 100%);
         border: 2px solid #52b788;
@@ -194,11 +212,6 @@ custom_css = f"""
         font-size: 0.68rem;
         color: #94a3b8;
     }}
-
-    .captain-star {{
-        color: #f1c40f;
-        font-weight: bold;
-    }}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -207,7 +220,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.2.0 - Tactical IA Engine</span>
+    <span class="version-badge">v0.2.1 - Injury & Suspension Tracker</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -245,7 +258,6 @@ TEST_PLAYERS = {
 }
 
 def get_complete_roster():
-    # Ritorna i calciatori reali acquistati + segnaposto di test per quelli mancanti
     reali = stats_mia["acquisti"].copy()
     completa = []
     
@@ -254,7 +266,6 @@ def get_complete_roster():
         n_mancanti = SLOT_MAX[r_code] - len(giocatori_r)
         completa.extend(giocatori_r)
         
-        # Aggiungi dummy se servono
         test_pool = TEST_PLAYERS[r_code]
         for i in range(n_mancanti):
             nome_t, sq_t = test_pool[i % len(test_pool)]
@@ -362,12 +373,42 @@ with tab_formazione:
     <div class="fanta-card">
         <div class="fanta-card-title">📋 Assistente Schieramento IA</div>
         <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
-            Seleziona il tuo modulo tattico e lascia che l'IA calcoli gli 11 titolari ideali!
+            Seleziona il modulo, gestisci gli infortunati/squalificati e calcola l'11 ideale.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
-    # 1. Selettore Modulo
+    roster_completo = get_complete_roster()
+
+    # --- SEZIONE GESTIONE INDISPONIBILI ---
+    with st.expander("🚑 Gestione Infortunati, Squalificati e Ballottaggi", expanded=False):
+        st.markdown("Imposta lo stato di salute dei tuoi calciatori prima di generare la formazione:")
+        
+        cols_indis = st.columns(2)
+        for idx, p in enumerate(roster_completo):
+            col_target = cols_indis[idx % 2]
+            p_nome = p["nome"]
+            stato_attuale = st.session_state.stato_giocatori.get(p_nome, "Disponibile")
+            
+            nuovo_stato = col_target.selectbox(
+                f"{p['nome']} ({p['ruolo']} - {p['squadra_sa']})",
+                options=["Disponibile 🟢", "Infortunato 🚑", "Squalificato 🟥", "In Dubbio ❓"],
+                index=["Disponibile 🟢", "Infortunato 🚑", "Squalificato 🟥", "In Dubbio ❓"].index(
+                    f"{stato_attuale} 🟢" if stato_attuale == "Disponibile" else
+                    f"{stato_attuale} 🚑" if stato_attuale == "Infortunato" else
+                    f"{stato_attuale} 🟥" if stato_attuale == "Squalificato" else
+                    f"{stato_attuale} ❓"
+                ),
+                key=f"status_sel_{p_nome}"
+            )
+            clean_status = nuovo_stato.split()[0]
+            st.session_state.stato_giocatori[p_nome] = clean_status
+
+        if st.button("Reset Tutti a Disponibili 🟢"):
+            st.session_state.stato_giocatori = {}
+            st.rerun()
+
+    # --- SELETTORE MODULO & CALCOLO ---
     col_mod, col_btn = st.columns([1.5, 2])
     with col_mod:
         modulo_scelto = st.selectbox("Seleziona Modulo:", options=list(MODULI.keys()), index=0)
@@ -375,114 +416,124 @@ with tab_formazione:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         genera_click = st.button("🤖 Genera 11 Titolari IA", use_container_width=True)
 
-    roster_completo = get_complete_roster()
-    
     if stats_mia["totali"] < 25:
-        st.caption("ℹ️ *Nota: I calciatori contrassegnati con (*) sono suggerimenti automatici IA per completare la tua rosa per il test.*")
+        st.caption("ℹ️ *Nota: I calciatori contrassegnati con (*) sono suggerimenti automatici IA per completare la rosa per il test.*")
 
-    # 2. Algoritmo IA di Selezione Titolari
-    def seleziona_formazione(modulo_str):
+    # --- ALGORITMO SELEZIONE TITOLARI IA ---
+    def seleziona_formazione_v2(modulo_str):
         req = MODULI[modulo_str]
         titolari = {"P": [], "D": [], "C": [], "A": []}
         panchina = []
 
-        # Estrai calciatori divisi per ruolo
-        portieri = [p for p in roster_completo if p["ruolo"] == "P"]
-        difensori = [p for p in roster_completo if p["ruolo"] == "D"]
-        centrocampisti = [p for p in roster_completo if p["ruolo"] == "C"]
-        attaccanti = [p for p in roster_completo if p["ruolo"] == "A"]
+        def calcola_score(p):
+            st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
+            base = p.get("prezzo", 1)
+            if st_p in ["Infortunato", "Squalificato"]:
+                return -9999
+            elif st_p == "In Dubbio":
+                return base * 0.4
+            return base + 10
 
-        # Seleziona titolari (I più costosi/prestanti in cima)
-        titolari["P"] = portieri[:1]
-        panchina.extend(portieri[1:])
-
-        titolari["D"] = difensori[:req["D"]]
-        panchina.extend(difensori[req["D"]:])
-
-        titolari["C"] = centrocampisti[:req["C"]]
-        panchina.extend(centrocampisti[req["C"]:])
-
-        titolari["A"] = attaccanti[:req["A"]]
-        panchina.extend(attaccanti[req["A"]:])
+        for r_code in ["P", "D", "C", "A"]:
+            giocatori_r = [p for p in roster_completo if p["ruolo"] == r_code]
+            giocatori_r_sorted = sorted(giocatori_r, key=calcola_score, reverse=True)
+            
+            n_titolari = 1 if r_code == "P" else req[r_code]
+            
+            sani_titolari = [p for p in giocatori_r_sorted if st.session_state.stato_giocatori.get(p["nome"], "Disponibile") not in ["Infortunato", "Squalificato"]]
+            
+            t_sel = sani_titolari[:n_titolari]
+            
+            if len(t_sel) < n_titolari:
+                rimanenti = [p for p in giocatori_r_sorted if p not in t_sel]
+                t_sel.extend(rimanenti[:(n_titolari - len(t_sel))])
+                
+            titolari[r_code] = t_sel
+            
+            for p in giocatori_r_sorted:
+                if p not in t_sel:
+                    panchina.append(p)
 
         return titolari, panchina
 
-    titolari, panchina = seleziona_formazione(modulo_scelto)
+    titolari, panchina = seleziona_formazione_v2(modulo_scelto)
 
-    # Scelta Capitano (Primo Attaccante o Centrocampista Top)
-    capitano = titolari["A"][0] if len(titolari["A"]) > 0 else titolari["C"][0]
+    # Capitano: Primo attaccante/centrocampista sano ed elastico
+    titolari_sani_att_cen = [p for p in (titolari["A"] + titolari["C"]) if st.session_state.stato_giocatori.get(p["nome"], "Disponibile") == "Disponibile"]
+    capitano = titolari_sani_att_cen[0] if titolari_sani_att_cen else titolari["P"][0]
 
     st.markdown("---")
 
-    # 3. VISUALIZZAZIONE CAMPO TATTICO VERDE
+    # --- CAMPO TATTICO VERDE ---
     st.markdown(f"<h3 style='text-align:center; color:#52b788;'>🏟️ Formazione Titolare ({modulo_scelto})</h3>", unsafe_allow_html=True)
     
+    def render_player_card(p, is_cap=False):
+        st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
+        badge_st = ""
+        if st_p == "Infortunato": badge_st = "<span class='status-badge status-inf'>🚑 INF</span>"
+        elif st_p == "Squalificato": badge_st = "<span class='status-badge status-squ'>🟥 SQU</span>"
+        elif st_p == "In Dubbio": badge_st = "<span class='status-badge status-dub'>❓ DUB</span>"
+
+        cap_icon = "⭐ " if is_cap else ""
+        
+        return f"""
+        <div class='player-card-pitch'>
+            <span class='role-badge badge-{p['ruolo'].lower()}'>{p['ruolo']}</span>{badge_st}
+            <div class='player-name'>{cap_icon}{p['nome']}</div>
+            <div class='player-team'>{p['squadra_sa']}</div>
+        </div>
+        """
+
     html_pitch = "<div class='pitch-container'>"
     
-    # Riga Attaccanti
+    # Attaccanti
     html_pitch += "<div class='pitch-row'>"
     for p in titolari["A"]:
-        is_cap = "⭐ " if p["nome"] == capitano["nome"] else ""
-        html_pitch += f"""
-        <div class='player-card-pitch'>
-            <span class='role-badge badge-a'>A</span>
-            <div class='player-name'>{is_cap}{p['nome']}</div>
-            <div class='player-team'>{p['squadra_sa']}</div>
-        </div>
-        """
+        html_pitch += render_player_card(p, is_cap=(p["nome"] == capitano["nome"]))
     html_pitch += "</div>"
 
-    # Riga Centrocampisti
+    # Centrocampisti
     html_pitch += "<div class='pitch-row'>"
     for p in titolari["C"]:
-        is_cap = "⭐ " if p["nome"] == capitano["nome"] else ""
-        html_pitch += f"""
-        <div class='player-card-pitch'>
-            <span class='role-badge badge-c'>C</span>
-            <div class='player-name'>{is_cap}{p['nome']}</div>
-            <div class='player-team'>{p['squadra_sa']}</div>
-        </div>
-        """
+        html_pitch += render_player_card(p, is_cap=(p["nome"] == capitano["nome"]))
     html_pitch += "</div>"
 
-    # Riga Difensori
+    # Difensori
     html_pitch += "<div class='pitch-row'>"
     for p in titolari["D"]:
-        html_pitch += f"""
-        <div class='player-card-pitch'>
-            <span class='role-badge badge-d'>D</span>
-            <div class='player-name'>{p['nome']}</div>
-            <div class='player-team'>{p['squadra_sa']}</div>
-        </div>
-        """
+        html_pitch += render_player_card(p)
     html_pitch += "</div>"
 
-    # Riga Portiere
+    # Portiere
     html_pitch += "<div class='pitch-row'>"
     for p in titolari["P"]:
-        html_pitch += f"""
-        <div class='player-card-pitch'>
-            <span class='role-badge badge-p'>P</span>
-            <div class='player-name'>{p['nome']}</div>
-            <div class='player-team'>{p['squadra_sa']}</div>
-        </div>
-        """
+        html_pitch += render_player_card(p)
     html_pitch += "</div>"
 
     html_pitch += "</div>"
     st.markdown(html_pitch, unsafe_allow_html=True)
 
-    # 4. PANCHINA & SUGGERIMENTI IA
+    # --- PANCHINA & ADVICE ---
     col_panch, col_ia_advice = st.columns([1.2, 1])
 
     with col_panch:
-        st.markdown("#### 🪑 Panchina Sostituti")
-        for p in panchina[:7]: # Prime 7 riserve
+        st.markdown("#### 🪑 Panchina Ordinata")
+        for p in panchina[:8]:
+            st_p = st.session_state.stato_giocatori.get(p["nome"], "Disponibile")
+            badge_str = ""
+            if st_p == "Infortunato": badge_str = " <span class='status-badge status-inf'>🚑 INF</span>"
+            elif st_p == "Squalificato": badge_str = " <span class='status-badge status-squ'>🟥 SQU</span>"
+            elif st_p == "In Dubbio": badge_str = " <span class='status-badge status-dub'>❓ DUB</span>"
+            
             r_code = p['ruolo']
-            st.markdown(f"• <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> **{p['nome']}** ({p['squadra_sa']})", unsafe_allow_html=True)
+            st.markdown(f"• <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> **{p['nome']}** ({p['squadra_sa']}){badge_str}", unsafe_allow_html=True)
 
     with col_ia_advice:
         st.markdown("#### 💡 Intelligence Tattica IA")
+        inf_count = sum(1 for v in st.session_state.stato_giocatori.values() if v == "Infortunato")
+        squ_count = sum(1 for v in st.session_state.stato_giocatori.values() if v == "Squalificato")
+        dub_count = sum(1 for v in st.session_state.stato_giocatori.values() if v == "In Dubbio")
+        
         st.info(f"⭐ **Capitano Consigliato:** `{capitano['nome']}` ({capitano['squadra_sa']})\n\n"
-                f"📈 **Fanta-Index Titolo:** `88 / 100`\n\n"
-                f"🔥 **Ballottaggio Caldo:** `{titolari['C'][-1]['nome']}` vs `{panchina[0]['nome']}`")
+                f"🚑 **Infortunati:** `{inf_count}` | 🟥 **Squalificati:** `{squ_count}` | ❓ **In Dubbio:** `{dub_count}`\n\n"
+                f"🛡️ **Affidabilità 11 Titolare:** `{'Alta 🟢' if inf_count == 0 and squ_count == 0 else 'Monitorata 🟡'}`")
