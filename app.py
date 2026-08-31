@@ -1,23 +1,34 @@
 import streamlit as st
+import pandas as pd
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant",
+    page_title="FantaIA Assistant v0.1.0",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Immagini per lo sfondo stadio e il martello dell'asta
+# Immagini per lo sfondo e il martello 3D
 URL_SFONDO_STADIO = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=1920&auto=format&fit=crop"
 URL_MARTELLO_ASTA = "https://cdn3d.iconscout.com/3d/premium/thumb/auction-gavel-4721151-3927976.png"
 
-# 2. CSS Avanzato (Unione Grafica v0.0.3 + v0.0.4)
+# 2. INIZIALIZZAZIONE "QUADERNO DI MEMORIA" (Session State)
+if "budget_iniziale" not in st.session_state:
+    st.session_state.budget_iniziale = 500
+
+if "rosa" not in st.session_state:
+    # Struttura di ogni calciatore: {"nome": str, "squadra": str, "ruolo": str, "prezzo": int}
+    st.session_state.rosa = []
+
+# Slot standard Fantacalcio
+SLOT_MAX = {"P": 3, "D": 8, "C": 8, "A": 6}
+
+# 3. CSS Avanzato (Unione Grafica v0.0.4 + Stile Input Form)
 custom_css = f"""
 <style>
-    /* Sfondo Stadio Vista Interna con Overlay Scuro */
     .stApp {{
-        background-image: linear-gradient(rgba(10, 17, 24, 0.88), rgba(10, 17, 24, 0.94)),
+        background-image: linear-gradient(rgba(10, 17, 24, 0.90), rgba(10, 17, 24, 0.95)),
                           url("{URL_SFONDO_STADIO}");
         background-size: cover;
         background-position: center;
@@ -25,7 +36,6 @@ custom_css = f"""
         color: #f0f4f8;
     }}
 
-    /* Intestazione principale (Da v0.0.3) */
     .header-container {{
         background: linear-gradient(135deg, #1b4332 0%, #081c15 100%);
         border: 2px solid #2d6a4f;
@@ -47,7 +57,7 @@ custom_css = f"""
         margin-top: 4px;
     }}
 
-    /* --- PULSANTI DI NAVIGAZIONE CON BORDO (Da v0.0.4) --- */
+    /* Pulsanti di navigazione */
     div[data-baseweb="tab-list"] {{
         justify-content: center !important;
         gap: 10px !important;
@@ -61,7 +71,6 @@ custom_css = f"""
         display: none !important;
     }}
 
-    /* Singolo Pulsante Rettangolare */
     button[data-baseweb="tab"] {{
         background-color: rgba(20, 32, 44, 0.8) !important;
         border: 1.5px solid #3d5a45 !important;
@@ -82,7 +91,6 @@ custom_css = f"""
         background-color: rgba(30, 46, 60, 0.9) !important;
     }}
 
-    /* Pulsante Selezionato (Contorno Verde Luminoso) */
     button[data-baseweb="tab"][aria-selected="true"] {{
         background-color: rgba(18, 32, 42, 0.95) !important;
         border: 2px solid #52b788 !important;
@@ -94,22 +102,22 @@ custom_css = f"""
         font-weight: 700 !important;
     }}
 
-    /* --- BADGE RUOLI FANTACALCIO (Da v0.0.3) --- */
+    /* Badge Ruoli */
     .role-badge {{
-        padding: 4px 10px;
+        padding: 3px 8px;
         border-radius: 6px;
         font-weight: 800;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         color: #ffffff;
         display: inline-block;
-        margin-right: 5px;
+        margin-right: 6px;
     }}
-    .badge-p {{ background-color: #e67e22; }} /* Portiere */
-    .badge-d {{ background-color: #27ae60; }} /* Difensore */
-    .badge-c {{ background-color: #2980b9; }} /* Centrocampista */
-    .badge-a {{ background-color: #c0392b; }} /* Attaccante */
+    .badge-p {{ background-color: #e67e22; }}
+    .badge-d {{ background-color: #27ae60; }}
+    .badge-c {{ background-color: #2980b9; }}
+    .badge-a {{ background-color: #c0392b; }}
 
-    /* Card generali */
+    /* Card Generali */
     .fanta-card {{
         background: rgba(22, 34, 47, 0.85);
         border: 1px solid #243447;
@@ -123,49 +131,21 @@ custom_css = f"""
         color: #52b788;
         font-size: 1.05rem;
         font-weight: 700;
-        margin-bottom: 8px;
-    }}
-
-    /* --- CAMPO TATTICO VERDE (Da v0.0.3) --- */
-    .pitch-container {{
-        background: linear-gradient(180deg, #1e5631 0%, #143d21 100%);
-        border: 2px solid #52b788;
-        border-radius: 14px;
-        padding: 20px 10px;
-        text-align: center;
-        box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
-        margin-top: 10px;
-    }}
-
-    .pitch-row {{
-        display: flex;
-        justify-content: space-around;
-        margin: 12px 0;
-    }}
-
-    .player-slot {{
-        background: rgba(11, 19, 25, 0.85);
-        border: 1px solid #52b788;
-        border-radius: 8px;
-        padding: 6px 10px;
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: #ffffff;
-        min-width: 65px;
+        margin-bottom: 10px;
     }}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# 3. Header Visivo
+# 4. Header Visivo
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.0.4 - Full Edition</span>
+    <span class="version-badge">v0.1.0 - Modulo Asta Attivo</span>
 </div>
 """, unsafe_allow_html=True)
 
-# 4. Navigazione a Schede (Icone + Bordi)
+# 5. Navigazione a Schede
 tab_home, tab_asta, tab_formazione, tab_scambi = st.tabs([
     "🏠 Home", 
     "🔨 Asta", 
@@ -173,82 +153,165 @@ tab_home, tab_asta, tab_formazione, tab_scambi = st.tabs([
     "🔄 Scambi"
 ])
 
-# --- CONTENUTO SCHEDE (Tutto il contenuto di v0.0.3) ---
+# --- CALCOLI DINAMICI BUDGET & SLOT ---
+crediti_spesi = sum(p["prezzo"] for p in st.session_state.rosa)
+crediti_rimasti = st.session_state.budget_iniziale - crediti_spesi
+
+# Conteggio giocatori per ruolo
+conteggio_ruoli = {"P": 0, "D": 0, "C": 0, "A": 0}
+for p in st.session_state.rosa:
+    if p["ruolo"] in conteggio_ruoli:
+        conteggio_ruoli[p["ruolo"]] += 1
+
+totale_giocatori = len(st.session_state.rosa)
+slot_mancanti_totali = 25 - totale_giocatori
+
+# --- CONTENUTO SCHEDE ---
 
 with tab_home:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">🎨 Ruoli & Codici Colore Fantacalcio</div>
+        <div class="fanta-card-title">📊 Riepilogo Generato dall'IA</div>
         <p style="color:#cbd5e0; font-size:0.9rem;">
-            Codifica visiva ufficiale per i calciatori:
+            Ecco lo stato attuale della tua squadra durante l'asta:
         </p>
-        <div style="margin-top:10px;">
-            <span class="role-badge badge-p">P</span> Portieri<br/><br/>
-            <span class="role-badge badge-d">D</span> Difensori<br/><br/>
-            <span class="role-badge badge-c">C</span> Centrocampisti<br/><br/>
-            <span class="role-badge badge-a">A</span> Attaccanti
-        </div>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
+
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric(label="Crediti Spesi", value="0 FM")
+        st.metric(label="Crediti Iniziali", value=f"{st.session_state.budget_iniziale} FM")
     with col2:
-        st.metric(label="Crediti Rimanenti", value="500 FM")
+        st.metric(label="Crediti Spesi", value=f"{crediti_spesi} FM")
+    with col3:
+        st.metric(label="Crediti Rimasti", value=f"{crediti_rimasti} FM")
+
+    st.markdown("<br/>", unsafe_allow_html=True)
+    st.subheader("📋 Composizione Rosa")
+    col_p, col_d, col_c, col_a = st.columns(4)
+    with col_p:
+        st.metric(label="Portieri", value=f"{conteggio_ruoli['P']} / 3")
+    with col_d:
+        st.metric(label="Difensori", value=f"{conteggio_ruoli['D']} / 8")
+    with col_c:
+        st.metric(label="Centrocampisti", value=f"{conteggio_ruoli['C']} / 8")
+    with col_a:
+        st.metric(label="Attaccanti", value=f"{conteggio_ruoli['A']} / 6")
+
 
 with tab_asta:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">🔨 Interfaccia Asta Live</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">Area rilanci rapidi e gestione budget.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Martello dell'Asta in Evidenza (Da v0.0.4)
-    col1, col2, col3 = st.columns([1, 1.2, 1])
-    with col2:
-        st.image(URL_MARTELLO_ASTA, use_container_width=True)
-    
-    st.markdown("""
-    <div class="fanta-card" style="border-left: 4px solid #c0392b; margin-top:15px;">
-        <span class="role-badge badge-a">A</span> <b>Lautaro Martinez</b> (Inter)<br/>
-        <small style="color:#a0aec0;">Prezzo Max Consigliato IA: 140 / 500 FM</small>
+        <div class="fanta-card-title">🔨 Centro Operativo Asta Live</div>
+        <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
+            Imposta il budget iniziale, registra ogni acquisto e segui i suggerimenti dell'IA.
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
+    # Impostazione Budget Iniziale
+    with st.expander("⚙️ Configurazione Budget Asta", expanded=False):
+        nuovo_budget = st.number_input(
+            "Budget Iniziale (Crediti Totali):", 
+            min_value=100, 
+            max_value=2000, 
+            value=st.session_state.budget_iniziale, 
+            step=50
+        )
+        if st.button("Aggiorna Budget Iniziale"):
+            st.session_state.budget_iniziale = nuovo_budget
+            st.rerun()
+
+    # Form Registrazione Rapida Giocatore
+    st.markdown("### 🛒 Registra un Acquisto")
+    with st.form("form_acquisto", clear_on_submit=True):
+        col_nome, col_squadra = st.columns([2, 1])
+        with col_nome:
+            nome_giocatore = st.text_input("Nome Calciatore", placeholder="es. Lautaro Martinez")
+        with col_squadra:
+            squadra_serie_a = st.text_input("Squadra", placeholder="es. Inter")
+
+        col_ruolo, col_prezzo = st.columns([1, 1])
+        with col_ruolo:
+            ruolo = st.selectbox("Ruolo", options=["P", "D", "C", "A"])
+        with col_prezzo:
+            prezzo = st.number_input("Prezzo d'Asta (FM)", min_value=1, max_value=crediti_rimasti if crediti_rimasti > 0 else 1, value=1)
+
+        submit_btn = st.form_submit_button("✅ Aggiungi alla Tua Rosa")
+
+        if submit_btn:
+            if nome_giocatore.strip() == "":
+                st.error("Inserisci il nome del calciatore!")
+            elif conteggio_ruoli[ruolo] >= SLOT_MAX[ruolo]:
+                st.warning(f"Hai già raggiunto il limite massimo di {SLOT_MAX[ruolo]} per il ruolo {ruolo}!")
+            else:
+                # Salva nel quaderno di memoria
+                st.session_state.rosa.append({
+                    "nome": nome_giocatore.strip(),
+                    "squadra": squadra_serie_a.strip().upper(),
+                    "ruolo": ruolo,
+                    "prezzo": int(prezzo)
+                })
+                st.success(f"{nome_giocatore} aggiunto con successo per {prezzo} FM!")
+                st.rerun()
+
+    st.markdown("---")
+
+    # Consigliere IA di Spesa
+    st.markdown("### 💡 Consigliere IA Budget Massimo")
+    if slot_mancanti_totali > 0:
+        # Riserva minima 1 FM per ogni slot rimasto da coprire
+        riserva_altri_slot = slot_mancanti_totali - 1
+        max_spendibile_singolo = max(1, crediti_rimasti - riserva_altri_slot)
+        
+        st.info(f"💰 **Crediti Rimasti:** `{crediti_rimasti} FM` | **Slot da completare:** `{slot_mancanti_totali}`\n\n"
+                f"⚠️ **Prezzo Max Consigliato per 1 top player:** `{max_spendibile_singolo} FM` *(ti permetterà di comprare tutti i restanti calciatori a 1 FM)*.")
+    else:
+        st.success("🎉 Complimenti! Hai completato la tua rosa di 25 giocatori!")
+
+    st.markdown("---")
+
+    # Lista e Gestione della Rosa Acquistata
+    st.markdown("### 📋 La Tua Rosa Acquistata")
+    if len(st.session_state.rosa) == 0:
+        st.write("Nessun calciatore acquistato finora. Compila il modulo in alto per iniziare!")
+    else:
+        # Visualizzazione calciatori per ruolo
+        for r_code, r_name in [("P", "Portieri"), ("D", "Difensori"), ("C", "Centrocampisti"), ("A", "Attaccanti")]:
+            giocatori_ruolo = [p for p in st.session_state.rosa if p["ruolo"] == r_code]
+            if giocatori_ruolo:
+                st.markdown(f"#### <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> {r_name} ({len(giocatori_ruolo)}/{SLOT_MAX[r_code]})", unsafe_allow_html=True)
+                for idx, player in enumerate(st.session_state.rosa):
+                    if player["ruolo"] == r_code:
+                        col_info, col_del = st.columns([4, 1])
+                        with col_info:
+                            st.write(f"• **{player['nome']}** ({player['squadra']}) — **{player['prezzo']} FM**")
+                        with col_del:
+                            if st.button("❌", key=f"del_{idx}"):
+                                st.session_state.rosa.pop(idx)
+                                st.rerun()
+
+        # Pulsante Reset Totale
+        st.markdown("<br/>", unsafe_allow_html=True)
+        if st.button("🗑️ Svuota Rosa e Ricomincia Asta"):
+            st.session_state.rosa = []
+            st.rerun()
+
+
 with tab_formazione:
-    st.markdown('<div class="fanta-card-title">📋 Campo Tattico 3-4-3</div>', unsafe_allow_html=True)
-    
-    # Campo Verde Tattico (Da v0.0.3)
     st.markdown("""
-    <div class="pitch-container">
-        <div class="pitch-row">
-            <div class="player-slot"><span class="role-badge badge-a">A</span> ATT</div>
-            <div class="player-slot"><span class="role-badge badge-a">A</span> ATT</div>
-            <div class="player-slot"><span class="role-badge badge-a">A</span> ATT</div>
-        </div>
-        <div class="pitch-row">
-            <div class="player-slot"><span class="role-badge badge-c">C</span> CEN</div>
-            <div class="player-slot"><span class="role-badge badge-c">C</span> CEN</div>
-            <div class="player-slot"><span class="role-badge badge-c">C</span> CEN</div>
-            <div class="player-slot"><span class="role-badge badge-c">C</span> CEN</div>
-        </div>
-        <div class="pitch-row">
-            <div class="player-slot"><span class="role-badge badge-d">D</span> DIF</div>
-            <div class="player-slot"><span class="role-badge badge-d">D</span> DIF</div>
-            <div class="player-slot"><span class="role-badge badge-d">D</span> DIF</div>
-        </div>
-        <div class="pitch-row">
-            <div class="player-slot"><span class="role-badge badge-p">P</span> POR</div>
-        </div>
+    <div class="fanta-card">
+        <div class="fanta-card-title">📋 Assistente Schieramento (In arrivo nella v0.2.0)</div>
+        <p style="color:#cbd5e0; font-size:0.9rem;">
+            Nella versione 0.2.0, l'IA analizzerà i giocatori acquistati nella rosa sopra e ti dirà chi schierare titolare giornata per giornata!
+        </p>
     </div>
     """, unsafe_allow_html=True)
 
 with tab_scambi:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">🔄 Area Confronto Scambi</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">Spazio riservato al calcolatore convenienza trade.</p>
+        <div class="fanta-card-title">🔄 Area Scambi (In arrivo nella v0.3.0)</div>
+        <p style="color:#cbd5e0; font-size:0.9rem;">Sezione riservata al calcolatore convenienza trade.</p>
     </div>
     """, unsafe_allow_html=True)
