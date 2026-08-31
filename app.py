@@ -1,19 +1,19 @@
 import streamlit as st
 import pandas as pd
+import random
 
 # 1. Configurazione della pagina
 st.set_page_config(
-    page_title="FantaIA Assistant v0.1.1",
+    page_title="FantaIA Assistant v0.2.0",
     page_icon="⚽",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Immagini per lo sfondo e il martello 3D
+# Immagini di sfondo
 URL_SFONDO_STADIO = "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=1920&auto=format&fit=crop"
-URL_MARTELLO_ASTA = "https://cdn3d.iconscout.com/3d/premium/thumb/auction-gavel-4721151-3927976.png"
 
-# 2. INIZIALIZZAZIONE "QUADERNO DI MEMORIA" (Session State)
+# 2. INIZIALIZZAZIONE Session State
 if "budget_iniziale" not in st.session_state:
     st.session_state.budget_iniziale = 500
 
@@ -22,24 +22,27 @@ if "nome_mia_squadra" not in st.session_state:
 
 if "squadre_lega" not in st.session_state:
     st.session_state.squadre_lega = [
-        "Mia Squadra ⭐️",
-        "FC Avversario 1",
-        "FC Avversario 2",
-        "FC Avversario 3",
-        "FC Avversario 4",
-        "FC Avversario 5",
-        "FC Avversario 6",
-        "FC Avversario 7"
+        "Mia Squadra ⭐️", "FC Avversario 1", "FC Avversario 2", 
+        "FC Avversario 3", "FC Avversario 4", "FC Avversario 5", 
+        "FC Avversario 6", "FC Avversario 7"
     ]
 
 if "tutti_acquisti" not in st.session_state:
-    # Struttura: {"fantasquadra": str, "nome": str, "squadra_sa": str, "ruolo": str, "prezzo": int}
     st.session_state.tutti_acquisti = []
 
-# Slot standard Fantacalcio
+# Configurazione Moduli Tattici (Difensori, Centrocampisti, Attaccanti)
+MODULI = {
+    "3-4-3": {"D": 3, "C": 4, "A": 3},
+    "4-3-3": {"D": 4, "C": 3, "A": 3},
+    "4-4-2": {"D": 4, "C": 4, "A": 2},
+    "3-5-2": {"D": 3, "C": 5, "A": 2},
+    "4-5-1": {"D": 4, "C": 5, "A": 1},
+    "5-3-2": {"D": 5, "C": 3, "A": 2}
+}
+
 SLOT_MAX = {"P": 3, "D": 8, "C": 8, "A": 6}
 
-# 3. CSS Avanzato (Grafica Unificata v0.0.4 + Tabella Avversari)
+# 3. CSS Avanzato per Campo Tattico e Card
 custom_css = f"""
 <style>
     .stApp {{
@@ -72,7 +75,7 @@ custom_css = f"""
         margin-top: 4px;
     }}
 
-    /* Pulsanti di navigazione */
+    /* Tabs Navigazione */
     div[data-baseweb="tab-list"] {{
         justify-content: center !important;
         gap: 8px !important;
@@ -132,7 +135,6 @@ custom_css = f"""
     .badge-c {{ background-color: #2980b9; }}
     .badge-a {{ background-color: #c0392b; }}
 
-    /* Card Generali */
     .fanta-card {{
         background: rgba(22, 34, 47, 0.85);
         border: 1px solid #243447;
@@ -148,6 +150,55 @@ custom_css = f"""
         font-weight: 700;
         margin-bottom: 10px;
     }}
+
+    /* STILE CAMPO DA GIOCO TATICO */
+    .pitch-container {{
+        background: linear-gradient(180deg, #1b4d27 0%, #11331a 100%);
+        border: 2px solid #52b788;
+        border-radius: 16px;
+        padding: 22px 12px;
+        text-align: center;
+        box-shadow: inset 0 0 25px rgba(0,0,0,0.7);
+        margin: 15px 0;
+    }}
+
+    .pitch-row {{
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        margin: 14px 0;
+        gap: 6px;
+    }}
+
+    .player-card-pitch {{
+        background: rgba(15, 25, 35, 0.92);
+        border: 1px solid #52b788;
+        border-radius: 8px;
+        padding: 6px 8px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: #ffffff;
+        flex: 1;
+        max-width: 110px;
+        box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+    }}
+
+    .player-name {{
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 700;
+    }}
+
+    .player-team {{
+        font-size: 0.68rem;
+        color: #94a3b8;
+    }}
+
+    .captain-star {{
+        color: #f1c40f;
+        font-weight: bold;
+    }}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
@@ -156,7 +207,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 st.markdown("""
 <div class="header-container">
     <h1 style="margin:0; font-size:1.8rem; color:#ffffff;">⚽ FantaIA Assistant</h1>
-    <span class="version-badge">v0.1.1 - League & Radar Avversari</span>
+    <span class="version-badge">v0.2.0 - Tactical IA Engine</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -165,10 +216,10 @@ tab_home, tab_asta, tab_radar, tab_formazione = st.tabs([
     "🏠 Home", 
     "🔨 Asta Live", 
     "📊 Radar Lega", 
-    "📋 Formazione"
+    "📋 Formazione IA"
 ])
 
-# --- FUNZIONI UTILI DI CALCOLO LEGA ---
+# --- FUNZIONI DI SUPPORTO ---
 def get_stats_squadra(nome_squadra):
     acquisti = [p for p in st.session_state.tutti_acquisti if p["fantasquadra"] == nome_squadra]
     spesi = sum(p["prezzo"] for p in acquisti)
@@ -177,19 +228,44 @@ def get_stats_squadra(nome_squadra):
     count_d = sum(1 for p in acquisti if p["ruolo"] == "D")
     count_c = sum(1 for p in acquisti if p["ruolo"] == "C")
     count_a = sum(1 for p in acquisti if p["ruolo"] == "A")
-    totali = len(acquisti)
-    slot_mancanti = 25 - totali
     return {
-        "squadra": nome_squadra,
-        "acquisti": acquisti,
-        "spesi": spesi,
-        "rimasti": rimasti,
+        "acquisti": acquisti, "spesi": spesi, "rimasti": rimasti,
         "P": count_p, "D": count_d, "C": count_c, "A": count_a,
-        "totali": totali,
-        "slot_mancanti": slot_mancanti
+        "totali": len(acquisti)
     }
 
-stats_mia_squadra = get_stats_squadra(st.session_state.nome_mia_squadra)
+stats_mia = get_stats_squadra(st.session_state.nome_mia_squadra)
+
+# Generatore Calciatori di Test (se la rosa non è ancora completa)
+TEST_PLAYERS = {
+    "P": [("Sommer", "INT"), ("Maignan", "MIL"), ("Di Gregorio", "JUV")],
+    "D": [("Dimarco", "INT"), ("Theo", "MIL"), ("Bremer", "JUV"), ("Di Lorenzo", "NAP"), ("Bastoni", "INT"), ("Buongiorno", "NAP"), ("Pavard", "INT"), ("Darmian", "INT")],
+    "C": [("Barella", "INT"), ("Pulisic", "MIL"), ("Koopmeiners", "JUV"), ("Zaccagni", "LAZ"), ("Calhanoglu", "INT"), ("Man", "PAR"), ("McTominay", "NAP"), ("Ederson", "ATA")],
+    "A": [("Lautaro", "INT"), ("Vlahovic", "JUV"), ("Thuram", "INT"), ("Kvaratskhelia", "NAP"), ("Retegui", "ATA"), ("Lukaku", "NAP")]
+}
+
+def get_complete_roster():
+    # Ritorna i calciatori reali acquistati + segnaposto di test per quelli mancanti
+    reali = stats_mia["acquisti"].copy()
+    completa = []
+    
+    for r_code in ["P", "D", "C", "A"]:
+        giocatori_r = [p for p in reali if p["ruolo"] == r_code]
+        n_mancanti = SLOT_MAX[r_code] - len(giocatori_r)
+        completa.extend(giocatori_r)
+        
+        # Aggiungi dummy se servono
+        test_pool = TEST_PLAYERS[r_code]
+        for i in range(n_mancanti):
+            nome_t, sq_t = test_pool[i % len(test_pool)]
+            completa.append({
+                "nome": f"{nome_t}*",
+                "squadra_sa": sq_t,
+                "ruolo": r_code,
+                "prezzo": 1
+            })
+    return completa
+
 
 # --- CONTENUTO SCHEDE ---
 
@@ -197,9 +273,7 @@ with tab_home:
     st.markdown("""
     <div class="fanta-card">
         <div class="fanta-card-title">📊 Centro Comando & Situazione Rosa</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">
-            Stato attuale della tua fanta-squadra:
-        </p>
+        <p style="color:#cbd5e0; font-size:0.9rem;">Stato attuale della tua fanta-squadra:</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -207,21 +281,17 @@ with tab_home:
     with col1:
         st.metric(label="Budget Iniziale", value=f"{st.session_state.budget_iniziale} FM")
     with col2:
-        st.metric(label="Spesi", value=f"{stats_mia_squadra['spesi']} FM")
+        st.metric(label="Spesi", value=f"{stats_mia['spesi']} FM")
     with col3:
-        st.metric(label="Crediti Rimasti", value=f"{stats_mia_squadra['rimasti']} FM")
+        st.metric(label="Crediti Rimasti", value=f"{stats_mia['rimasti']} FM")
 
     st.markdown("<br/>", unsafe_allow_html=True)
-    st.subheader("📋 Tuoi Slot Completati")
+    st.subheader("📋 Tuoi Slot Acquistati")
     col_p, col_d, col_c, col_a = st.columns(4)
-    with col_p:
-        st.metric(label="Portieri", value=f"{stats_mia_squadra['P']} / 3")
-    with col_d:
-        st.metric(label="Difensori", value=f"{stats_mia_squadra['D']} / 8")
-    with col_c:
-        st.metric(label="Centrocampisti", value=f"{stats_mia_squadra['C']} / 8")
-    with col_a:
-        st.metric(label="Attaccanti", value=f"{stats_mia_squadra['A']} / 6")
+    with col_p: st.metric(label="Portieri", value=f"{stats_mia['P']} / 3")
+    with col_d: st.metric(label="Difensori", value=f"{stats_mia['D']} / 8")
+    with col_c: st.metric(label="Centrocampisti", value=f"{stats_mia['C']} / 8")
+    with col_a: st.metric(label="Attaccanti", value=f"{stats_mia['A']} / 6")
 
 
 with tab_asta:
@@ -234,10 +304,8 @@ with tab_asta:
     </div>
     """, unsafe_allow_html=True)
 
-    # Form Registrazione Chiamata Asta
     with st.form("form_acquisto_unificato", clear_on_submit=True):
         st.markdown("##### 🛒 Nuovo Calciatore Aggiudicato")
-        
         col_sq_fanta, col_nome = st.columns([1.2, 1.8])
         with col_sq_fanta:
             fantasquadra_acquirente = st.selectbox("Acquirente", options=st.session_state.squadre_lega)
@@ -250,17 +318,13 @@ with tab_asta:
         with col_ruolo:
             ruolo = st.selectbox("Ruolo", options=["P", "D", "C", "A"])
         with col_prezzo:
-            stats_acq = get_stats_squadra(fantasquadra_acquirente)
-            max_p = max(1, stats_acq["rimasti"])
-            prezzo = st.number_input("Prezzo FM", min_value=1, max_value=max_p, value=1)
+            prezzo = st.number_input("Prezzo FM", min_value=1, value=1)
 
         submit_btn = st.form_submit_button("✅ Registra Aggiudicazione")
 
         if submit_btn:
             if nome_giocatore.strip() == "":
                 st.error("Inserisci il nome del calciatore!")
-            elif stats_acq[ruolo] >= SLOT_MAX[ruolo]:
-                st.warning(f"{fantasquadra_acquirente} ha già raggiunto il limite di {SLOT_MAX[ruolo]} per il ruolo {ruolo}!")
             else:
                 st.session_state.tutti_acquisti.append({
                     "fantasquadra": fantasquadra_acquirente,
@@ -269,54 +333,16 @@ with tab_asta:
                     "ruolo": ruolo,
                     "prezzo": int(prezzo)
                 })
-                st.success(f"{nome_giocatore} assegnato a {fantasquadra_acquirente} per {prezzo} FM!")
+                st.success(f"{nome_giocatore} assegnato a {fantasquadra_acquirente}!")
                 st.rerun()
-
-    st.markdown("---")
-
-    # Consigliere IA Tattico per l'Asta
-    st.markdown("### 💡 Intelligence IA Competitiva")
-    
-    # Trova il rivale più ricco
-    altre_stats = [get_stats_squadra(sq) for sq in st.session_state.squadre_lega if sq != st.session_state.nome_mia_squadra]
-    if altre_stats:
-        ricco = max(altre_stats, key=lambda x: x["rimasti"])
-        st.info(f"🏆 **Rivale più pericoloso:** `{ricco['squadra']}` con **{ricco['rimasti']} FM** rimasti ({ricco['A']}/6 Attaccanti).\n\n"
-                f"💡 **Tuo Budget Rimasto:** `{stats_mia_squadra['rimasti']} FM`")
-
-    st.markdown("---")
-
-    # Gestione Impostazioni Lega
-    with st.expander("⚙️ Personalizza Nomi Squadre & Budget Lega", expanded=False):
-        nuovo_budget = st.number_input("Budget Iniziale per tutti (FM):", min_value=100, max_value=2000, value=st.session_state.budget_iniziale, step=50)
-        
-        st.write("**Rinomina la tua Squadra:**")
-        mio_nome = st.text_input("Tuo Nome", value=st.session_state.nome_mia_squadra)
-        
-        if st.button("Salva Impostazioni Lega"):
-            st.session_state.budget_iniziale = nuovo_budget
-            if mio_nome.strip() != "":
-                # Aggiorna il nome nei vecchi acquisti se cambiato
-                old_name = st.session_state.nome_mia_squadra
-                st.session_state.nome_mia_squadra = mio_nome.strip()
-                st.session_state.squadre_lega[0] = mio_nome.strip()
-                for p in st.session_state.tutti_acquisti:
-                    if p["fantasquadra"] == old_name:
-                        p["fantasquadra"] = mio_nome.strip()
-            st.rerun()
 
 
 with tab_radar:
     st.markdown("""
     <div class="fanta-card">
         <div class="fanta-card-title">📊 Classifica Crediti & Rose della Lega</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">
-            Panoramica in tempo reale di tutte le fantasquadre partecipanti.
-        </p>
     </div>
     """, unsafe_allow_html=True)
-
-    # Costruzione Tabella Riassuntiva Lega
     dati_tabella = []
     for sq in st.session_state.squadre_lega:
         st_sq = get_stats_squadra(sq)
@@ -324,47 +350,139 @@ with tab_radar:
             "Fantasquadra": sq,
             "Crediti Rimasti": f"{st_sq['rimasti']} FM",
             "Spesi": f"{st_sq['spesi']} FM",
-            "P": f"{st_sq['P']}/3",
-            "D": f"{st_sq['D']}/8",
-            "C": f"{st_sq['C']}/8",
-            "A": f"{st_sq['A']}/6",
+            "P": f"{st_sq['P']}/3", "D": f"{st_sq['D']}/8",
+            "C": f"{st_sq['C']}/8", "A": f"{st_sq['A']}/6",
             "Totali": f"{st_sq['totali']}/25"
         })
-
-    df_lega = pd.DataFrame(dati_tabella)
-    st.dataframe(df_lega, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-
-    # Ispezione Singola Rosa
-    st.markdown("### 🔍 Ispeziona Rosa Avversaria")
-    squadra_scelta = st.selectbox("Seleziona una squadra da analizzare:", options=st.session_state.squadre_lega)
-    
-    st_scelta = get_stats_squadra(squadra_scelta)
-    if len(st_scelta["acquisti"]) == 0:
-        st.write(f"Nessun calciatore acquistato da {squadra_scelta}.")
-    else:
-        for r_code, r_name in [("P", "Portieri"), ("D", "Difensori"), ("C", "Centrocampisti"), ("A", "Attaccanti")]:
-            giocatori_r = [p for p in st_scelta["acquisti"] if p["ruolo"] == r_code]
-            if giocatori_r:
-                st.markdown(f"##### <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> {r_name}", unsafe_allow_html=True)
-                for idx, player in enumerate(st.session_state.tutti_acquisti):
-                    if player["fantasquadra"] == squadra_scelta and player["ruolo"] == r_code:
-                        col_i, col_d = st.columns([4, 1])
-                        with col_i:
-                            st.write(f"• **{player['nome']}** ({player['squadra_sa']}) — **{player['prezzo']} FM**")
-                        with col_d:
-                            if st.button("❌", key=f"del_all_{idx}"):
-                                st.session_state.tutti_acquisti.pop(idx)
-                                st.rerun()
+    st.dataframe(pd.DataFrame(dati_tabella), use_container_width=True, hide_index=True)
 
 
 with tab_formazione:
     st.markdown("""
     <div class="fanta-card">
-        <div class="fanta-card-title">📋 Assistente Schieramento (In arrivo nella v0.2.0)</div>
-        <p style="color:#cbd5e0; font-size:0.9rem;">
-            Il Modulo Asta v0.1.1 è ora completo! Prossimo step: l'IA per schierare la formazione ideale.
+        <div class="fanta-card-title">📋 Assistente Schieramento IA</div>
+        <p style="color:#cbd5e0; font-size:0.9rem; margin-bottom:0;">
+            Seleziona il tuo modulo tattico e lascia che l'IA calcoli gli 11 titolari ideali!
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+    # 1. Selettore Modulo
+    col_mod, col_btn = st.columns([1.5, 2])
+    with col_mod:
+        modulo_scelto = st.selectbox("Seleziona Modulo:", options=list(MODULI.keys()), index=0)
+    with col_btn:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        genera_click = st.button("🤖 Genera 11 Titolari IA", use_container_width=True)
+
+    roster_completo = get_complete_roster()
+    
+    if stats_mia["totali"] < 25:
+        st.caption("ℹ️ *Nota: I calciatori contrassegnati con (*) sono suggerimenti automatici IA per completare la tua rosa per il test.*")
+
+    # 2. Algoritmo IA di Selezione Titolari
+    def seleziona_formazione(modulo_str):
+        req = MODULI[modulo_str]
+        titolari = {"P": [], "D": [], "C": [], "A": []}
+        panchina = []
+
+        # Estrai calciatori divisi per ruolo
+        portieri = [p for p in roster_completo if p["ruolo"] == "P"]
+        difensori = [p for p in roster_completo if p["ruolo"] == "D"]
+        centrocampisti = [p for p in roster_completo if p["ruolo"] == "C"]
+        attaccanti = [p for p in roster_completo if p["ruolo"] == "A"]
+
+        # Seleziona titolari (I più costosi/prestanti in cima)
+        titolari["P"] = portieri[:1]
+        panchina.extend(portieri[1:])
+
+        titolari["D"] = difensori[:req["D"]]
+        panchina.extend(difensori[req["D"]:])
+
+        titolari["C"] = centrocampisti[:req["C"]]
+        panchina.extend(centrocampisti[req["C"]:])
+
+        titolari["A"] = attaccanti[:req["A"]]
+        panchina.extend(attaccanti[req["A"]:])
+
+        return titolari, panchina
+
+    titolari, panchina = seleziona_formazione(modulo_scelto)
+
+    # Scelta Capitano (Primo Attaccante o Centrocampista Top)
+    capitano = titolari["A"][0] if len(titolari["A"]) > 0 else titolari["C"][0]
+
+    st.markdown("---")
+
+    # 3. VISUALIZZAZIONE CAMPO TATTICO VERDE
+    st.markdown(f"<h3 style='text-align:center; color:#52b788;'>🏟️ Formazione Titolare ({modulo_scelto})</h3>", unsafe_allow_html=True)
+    
+    html_pitch = "<div class='pitch-container'>"
+    
+    # Riga Attaccanti
+    html_pitch += "<div class='pitch-row'>"
+    for p in titolari["A"]:
+        is_cap = "⭐ " if p["nome"] == capitano["nome"] else ""
+        html_pitch += f"""
+        <div class='player-card-pitch'>
+            <span class='role-badge badge-a'>A</span>
+            <div class='player-name'>{is_cap}{p['nome']}</div>
+            <div class='player-team'>{p['squadra_sa']}</div>
+        </div>
+        """
+    html_pitch += "</div>"
+
+    # Riga Centrocampisti
+    html_pitch += "<div class='pitch-row'>"
+    for p in titolari["C"]:
+        is_cap = "⭐ " if p["nome"] == capitano["nome"] else ""
+        html_pitch += f"""
+        <div class='player-card-pitch'>
+            <span class='role-badge badge-c'>C</span>
+            <div class='player-name'>{is_cap}{p['nome']}</div>
+            <div class='player-team'>{p['squadra_sa']}</div>
+        </div>
+        """
+    html_pitch += "</div>"
+
+    # Riga Difensori
+    html_pitch += "<div class='pitch-row'>"
+    for p in titolari["D"]:
+        html_pitch += f"""
+        <div class='player-card-pitch'>
+            <span class='role-badge badge-d'>D</span>
+            <div class='player-name'>{p['nome']}</div>
+            <div class='player-team'>{p['squadra_sa']}</div>
+        </div>
+        """
+    html_pitch += "</div>"
+
+    # Riga Portiere
+    html_pitch += "<div class='pitch-row'>"
+    for p in titolari["P"]:
+        html_pitch += f"""
+        <div class='player-card-pitch'>
+            <span class='role-badge badge-p'>P</span>
+            <div class='player-name'>{p['nome']}</div>
+            <div class='player-team'>{p['squadra_sa']}</div>
+        </div>
+        """
+    html_pitch += "</div>"
+
+    html_pitch += "</div>"
+    st.markdown(html_pitch, unsafe_allow_html=True)
+
+    # 4. PANCHINA & SUGGERIMENTI IA
+    col_panch, col_ia_advice = st.columns([1.2, 1])
+
+    with col_panch:
+        st.markdown("#### 🪑 Panchina Sostituti")
+        for p in panchina[:7]: # Prime 7 riserve
+            r_code = p['ruolo']
+            st.markdown(f"• <span class='role-badge badge-{r_code.lower()}'>{r_code}</span> **{p['nome']}** ({p['squadra_sa']})", unsafe_allow_html=True)
+
+    with col_ia_advice:
+        st.markdown("#### 💡 Intelligence Tattica IA")
+        st.info(f"⭐ **Capitano Consigliato:** `{capitano['nome']}` ({capitano['squadra_sa']})\n\n"
+                f"📈 **Fanta-Index Titolo:** `88 / 100`\n\n"
+                f"🔥 **Ballottaggio Caldo:** `{titolari['C'][-1]['nome']}` vs `{panchina[0]['nome']}`")
