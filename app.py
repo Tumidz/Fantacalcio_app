@@ -192,30 +192,71 @@ def ottieni_api_key():
   return st.session_state.get("api_key_manuale", "") or chiave_da_secrets
 
 
+def _chiama_api_football(percorso, api_key, parametri=None):
+  """Chiamata di basso livello, usata da tutte le funzioni sopra.
+
+  Ritorna sempre (dati, errore). ATTENZIONE: API-FOOTBALL spesso risponde
+  con HTTP 200 anche quando la chiave è sbagliata/mancante o è finita la
+  quota, mettendo il motivo dentro il campo "errors" del JSON — per
+  questo non basta controllare lo status code, va sempre letto "errors".
+  """
+  intestazioni = {"x-apisports-key": api_key}
+  try:
+    risposta = requests.get(
+        f"{API_BASE_URL}/{percorso}",
+        headers=intestazioni,
+        params=parametri or {},
+        timeout=15,
+    )
+  except requests.RequestException as e:
+    return None, f"Errore di rete: {e}"
+
+  try:
+    corpo = risposta.json()
+  except ValueError:
+    return None, f"Risposta non interpretabile (HTTP {risposta.status_code})."
+
+  errori = corpo.get("errors")
+  if errori:
+    return None, f"L'API ha risposto con un errore: {errori}"
+  if risposta.status_code != 200:
+    return None, f"HTTP {risposta.status_code}: {corpo}"
+
+  return corpo.get("response", []), None
+
+
+def testa_connessione_api(api_key):
+  """Chiama l'endpoint /status (non consuma la quota giornaliera): utile
+  per capire subito se la chiave funziona e quante richieste restano."""
+  if not api_key:
+    return {"ok": False, "messaggio": "Nessuna chiave inserita."}
+  dati, errore = _chiama_api_football("status", api_key)
+  if errore:
+    return {"ok": False, "messaggio": errore}
+  return {"ok": True, "messaggio": "Connessione riuscita!", "info": dati}
+
+
 @st.cache_data(
     ttl=86400, show_spinner="🔄 Sincronizzazione rose reali di Serie A..."
 )
 def scarica_calciatori_da_api(api_key, stagione):
   """Scarica le rose reali di tutte le squadre di Serie A da API-FOOTBALL.
 
-  Ritorna None in caso di problemi di rete/chiave non valida, così l'app
-  può ricadere sui dati di esempio senza bloccarsi.
+  Ritorna sempre {"ok", "calciatori", "errore"} così l'app può sia
+  ricadere sui dati di esempio sia spiegare cosa non ha funzionato,
+  invece di fallire in silenzio come nella versione precedente.
   """
-  intestazioni = {"x-apisports-key": api_key}
-  try:
-    risposta_squadre = requests.get(
-        f"{API_BASE_URL}/teams",
-        headers=intestazioni,
-        params={"league": LEGA_SERIE_A_ID, "season": stagione},
-        timeout=15,
-    )
-    risposta_squadre.raise_for_status()
-    dati_squadre = risposta_squadre.json().get("response", [])
-  except requests.RequestException:
-    return None
-
+  dati_squadre, errore = _chiama_api_football(
+      "teams", api_key, {"league": LEGA_SERIE_A_ID, "season": stagione}
+  )
+  if errore:
+    return {"ok": False, "calciatori": None, "errore": errore}
   if not dati_squadre:
-    return None
+    return {
+        "ok": False,
+        "calciatori": None,
+        "errore": "Nessuna squadra restituita per questa lega/stagione.",
+    }
 
   calciatori_totali = []
   for voce in dati_squadre:
@@ -226,19 +267,10 @@ def scarica_calciatori_da_api(api_key, stagione):
       continue
     codice = MAPPA_SQUADRE_API.get(nome_squadra, nome_squadra[:3].upper())
 
-    try:
-      risposta_rosa = requests.get(
-          f"{API_BASE_URL}/players/squads",
-          headers=intestazioni,
-          params={"team": team_id},
-          timeout=15,
-      )
-      risposta_rosa.raise_for_status()
-      dati_rosa = risposta_rosa.json().get("response", [])
-    except requests.RequestException:
-      continue
-
-    if not dati_rosa:
+    dati_rosa, errore_rosa = _chiama_api_football(
+        "players/squads", api_key, {"team": team_id}
+    )
+    if errore_rosa or not dati_rosa:
       continue
 
     for giocatore in dati_rosa[0].get("players", []):
@@ -251,7 +283,13 @@ def scarica_calciatori_da_api(api_key, stagione):
           "player_id": giocatore.get("id"),
       })
 
-  return calciatori_totali or None
+  if not calciatori_totali:
+    return {
+        "ok": False,
+        "calciatori": None,
+        "errore": "Nessun calciatore trovato nelle rose scaricate.",
+    }
+  return {"ok": True, "calciatori": calciatori_totali, "errore": None}
 
 
 @st.cache_data(ttl=604800, show_spinner="📊 Recupero statistiche giocatore...")
@@ -261,22 +299,12 @@ def scarica_statistiche_giocatore(player_id, api_key, numero_stagioni=6):
   Se il giocatore è in Serie A solo da quest'anno, comparirà solo la
   stagione corrente, esattamente come richiesto.
   """
-  intestazioni = {"x-apisports-key": api_key}
   righe = []
   for anno in range(STAGIONE_CORRENTE, STAGIONE_CORRENTE - numero_stagioni, -1):
-    try:
-      risposta = requests.get(
-          f"{API_BASE_URL}/players",
-          headers=intestazioni,
-          params={"id": player_id, "season": anno},
-          timeout=15,
-      )
-      risposta.raise_for_status()
-      dati = risposta.json().get("response", [])
-    except requests.RequestException:
-      continue
-
-    if not dati:
+    dati, errore = _chiama_api_football(
+        "players", api_key, {"id": player_id, "season": anno}
+    )
+    if errore or not dati:
       continue
 
     for blocco in dati[0].get("statistics", []):
@@ -348,14 +376,20 @@ if "chat_messages" not in st.session_state:
 if "dati_live_tentati" not in st.session_state:
   st.session_state.dati_live_tentati = False
 
+if "ultimo_errore_live" not in st.session_state:
+  st.session_state.ultimo_errore_live = None
+
 _chiave_avvio = ottieni_api_key()
 if _chiave_avvio and not st.session_state.dati_live_tentati:
-  _nuovi_calciatori = scarica_calciatori_da_api(_chiave_avvio, STAGIONE_CORRENTE)
-  if _nuovi_calciatori:
-    st.session_state.db_calciatori = _nuovi_calciatori
+  _risultato_avvio = scarica_calciatori_da_api(_chiave_avvio, STAGIONE_CORRENTE)
+  if _risultato_avvio["ok"]:
+    st.session_state.db_calciatori = _risultato_avvio["calciatori"]
     st.session_state.last_update = (
         datetime.now().strftime("%d/%m/%Y - %H:%M") + " CEST"
     )
+    st.session_state.ultimo_errore_live = None
+  else:
+    st.session_state.ultimo_errore_live = _risultato_avvio["errore"]
   st.session_state.dati_live_tentati = True
 
 MODULI = {
@@ -455,22 +489,20 @@ with col_sync2:
     chiave = ottieni_api_key()
     if chiave:
       scarica_calciatori_da_api.clear()
-      nuovi_calciatori = scarica_calciatori_da_api(chiave, STAGIONE_CORRENTE)
-      if nuovi_calciatori:
-        st.session_state.db_calciatori = nuovi_calciatori
+      risultato = scarica_calciatori_da_api(chiave, STAGIONE_CORRENTE)
+      if risultato["ok"]:
+        st.session_state.db_calciatori = risultato["calciatori"]
         st.session_state.last_update = (
             datetime.now().strftime("%d/%m/%Y - %H:%M") + " CEST"
         )
+        st.session_state.ultimo_errore_live = None
         st.success(
-            f"Rose aggiornate da API-FOOTBALL: {len(nuovi_calciatori)}"
+            f"Rose aggiornate da API-FOOTBALL: {len(risultato['calciatori'])}"
             " calciatori trovati."
         )
       else:
-        st.warning(
-            "Non sono riuscito a scaricare i dati dall'API (chiave non"
-            " valida o servizio non raggiungibile). Ho mantenuto i dati"
-            " attuali."
-        )
+        st.session_state.ultimo_errore_live = risultato["errore"]
+        st.error(f"❌ Aggiornamento fallito: {risultato['errore']}")
     else:
       st.session_state.db_calciatori = DB_CALCIATORI_DEFAULT.copy()
       st.session_state.last_update = (
@@ -500,7 +532,22 @@ with st.expander("🔌 Connessione Dati Live (API-FOOTBALL)"):
   if _valore_input_chiave != st.session_state.get("api_key_manuale", ""):
     st.session_state.api_key_manuale = _valore_input_chiave
     st.session_state.dati_live_tentati = False
+    st.session_state.ultimo_errore_live = None
     st.rerun()
+
+  if st.button("🧪 Testa la chiave"):
+    esito_test = testa_connessione_api(ottieni_api_key())
+    if esito_test["ok"]:
+      st.success(f"✅ {esito_test['messaggio']}")
+      st.json(esito_test.get("info", {}))
+    else:
+      st.error(f"❌ {esito_test['messaggio']}")
+
+  if _chiave_attiva and st.session_state.get("ultimo_errore_live"):
+    st.warning(
+        "⚠️ L'ultimo aggiornamento automatico non è riuscito: "
+        f"{st.session_state.ultimo_errore_live}"
+    )
 
 # 5. Navigazione Schede
 (
