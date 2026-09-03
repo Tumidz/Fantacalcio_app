@@ -6,7 +6,7 @@ st.title("⚽ Algo Smart Assistant - Modulo & Formazione")
 st.caption("Seleziona la tua rosa, imposta gli indici e l'algoritmo calcolerà il modulo e gli 11 titolari perfetti.")
 
 # --- DATABASE ROSA DIMOSTRATIVA / MODIFICABILE ---
-if "rosa" not in st.setdefault("rosa", {}):
+if "rosa" not in st.session_state:
     st.session_state.rosa = [
         # Portieri (P)
         {"nome": "Maignan", "ruolo": "P", "indice": 7.5, "disponibile": True},
